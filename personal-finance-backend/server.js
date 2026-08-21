@@ -1,24 +1,23 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
 
 const app = express();
 
-// Middleware
+const { verifyToken } = require('./src/middleware/authMiddleware.js');
+
+// Middleware chung
 app.use(cors());
 app.use(express.json()); // Để parse JSON body từ Frontend
 
-// Khai báo các Routes
-const walletRoutes = require('./src/routes/walletRoutes');
-app.use('/api/wallets', walletRoutes);
+app.use('/api/auth', require('./src/routes/authRoutes'));
 
-// Khai báo Route cho Transactions
-const transactionRoutes = require('./src/routes/transactionRoutes');
-app.use('/api/transactions', transactionRoutes);
-
-// Thêm vào cùng chỗ khai báo routes
-const categoryRoutes = require('./src/routes/categoryRoutes');
-app.use('/api/categories', categoryRoutes);
+app.use('/api/wallets', verifyToken, require('./src/routes/walletRoutes'));
+app.use('/api/transactions', verifyToken, require('./src/routes/transactionRoutes'));
+app.use('/api/categories', verifyToken, require('./src/routes/categoryRoutes'));
+app.use('/api/budgets', verifyToken, require('./src/routes/budgetRoutes'));
+app.use('/api/ai', verifyToken, require('./src/routes/aiRoutes'));
+app.use('/api/plans', verifyToken, require('./src/routes/planRoutes'));
 
 // Test DB Connection
 const pool = require('./src/config/database');

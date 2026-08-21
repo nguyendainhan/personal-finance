@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { getWallets } = require('../controllers/walletController');
+const { getWallets, addWallet, updateWallet, deleteWallet } = require('../controllers/walletController');
 
-// Endpoint: GET /api/wallets/
 router.get('/', getWallets);
+router.post('/', addWallet);
+router.put('/:id', updateWallet);
+router.delete('/:id', deleteWallet);
 
 module.exports = router;

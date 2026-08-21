@@ -2,7 +2,7 @@ const pool = require('../config/database');
 
 const getTransactions = async (req, res) => {
     try {
-        const userId = 1; // Hardcode tạm thời
+        const userId = req.user.id;
         
         // Nhận tham số tháng và năm từ Frontend gửi lên (nếu có)
         const { month, year } = req.query; 
@@ -58,7 +58,7 @@ const getTransactions = async (req, res) => {
 // --- THÊM HÀM MỚI NÀY ---
 const createTransaction = async (req, res) => {
     try {
-        const userId = 1; // Hardcode tạm thời
+        const userId = req.user.id; // Lấy ID người dùng từ token
         const { wallet_id, to_wallet_id, category_id, amount, type, note, transaction_date } = req.body;
 
         // Validate cơ bản để đảm bảo FE gửi đủ dữ liệu
@@ -111,7 +111,7 @@ const deleteTransaction = async (req, res) => {
     try {
         // Lấy ID giao dịch từ URL (vd: /api/transactions/5)
         const transactionId = req.params.id; 
-        const userId = 1; // Tạm thời hardcode bảo mật chỉ cho xóa giao dịch của mình
+        const userId = req.user.id;
 
         const [result] = await pool.query(
             'DELETE FROM transactions WHERE id = ? AND user_id = ?', 
