@@ -16,7 +16,7 @@ const Auth = () => {
 
     try {
       const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-      const res = await axios.post(`http://localhost:5000${endpoint}`, formData);
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}${endpoint}`, formData);
 
       if (res.data.success) {
         if (isLogin) {
