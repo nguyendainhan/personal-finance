@@ -17,35 +17,34 @@ const getWallets = async (req, res) => {
 const addWallet = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { name, balance } = req.body;
+        const { name, balance, currency } = req.body;
         
         if (!name) return res.status(400).json({ success: false, message: 'Tên ví không được để trống' });
+        const curr = currency || 'TWD'; // Mặc định là TWD nếu không chọn
 
         await pool.query(
-            'INSERT INTO wallets (user_id, name, balance) VALUES (?, ?, ?)', 
-            [userId, name, balance || 0]
+            'INSERT INTO wallets (user_id, name, balance, currency) VALUES (?, ?, ?, ?)', 
+            [userId, name, balance || 0, curr]
         );
         res.status(201).json({ success: true, message: 'Thêm ví thành công' });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ success: false, message: 'Lỗi khi thêm ví' });
     }
 };
 
-// CẬP NHẬT VÍ (Đổi tên hoặc sửa số dư thủ công)
+// CẬP NHẬT VÍ
 const updateWallet = async (req, res) => {
     try {
         const userId = req.user.id;
         const { id } = req.params;
-        const { name, balance } = req.body;
+        const { name, balance, currency } = req.body;
 
         await pool.query(
-            'UPDATE wallets SET name = ?, balance = ? WHERE id = ? AND user_id = ?', 
-            [name, balance, id, userId]
+            'UPDATE wallets SET name = ?, balance = ?, currency = ? WHERE id = ? AND user_id = ?', 
+            [name, balance, currency, id, userId]
         );
         res.status(200).json({ success: true, message: 'Cập nhật ví thành công' });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ success: false, message: 'Lỗi khi cập nhật ví' });
     }
 };

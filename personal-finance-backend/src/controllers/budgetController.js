@@ -1,16 +1,15 @@
 const pool = require('../config/database');
 
-// Lấy danh sách ngân sách + tiến độ chi tiêu thực tế
+// 1. Lấy danh sách ngân sách (Chỉ lấy đúng của user đang đăng nhập)
 const getBudgets = async (req, res) => {
     try {
-        const userId = 1; // Hardcode tạm thời
+        const userId = req.user.id; // Lấy ID chuẩn từ Token
         const { month, year } = req.query;
 
         if (!month || !year) {
             return res.status(400).json({ success: false, message: 'Thiếu tháng và năm' });
         }
 
-        // Câu SQL thông minh: Lấy ngân sách VÀ tính tổng tiền đã tiêu của danh mục đó trong tháng
         const query = `
             SELECT 
                 b.id, 
@@ -23,7 +22,7 @@ const getBudgets = async (req, res) => {
             FROM budgets b
             JOIN categories c ON b.category_id = c.id
             LEFT JOIN transactions t ON t.category_id = b.category_id 
-                AND t.user_id = b.user_id
+                AND t.user_id = ?
                 AND t.type = 'EXPENSE' 
                 AND MONTH(t.transaction_date) = ? 
                 AND YEAR(t.transaction_date) = ?
@@ -31,7 +30,8 @@ const getBudgets = async (req, res) => {
             GROUP BY b.id, b.category_id, c.name, c.icon, c.color, b.amount
         `;
 
-        const [budgets] = await pool.query(query, [month, year, userId, month, year]);
+        // Truyền đúng 6 tham số tương ứng với các dấu chấm hỏi (?)
+        const [budgets] = await pool.query(query, [userId, month, year, userId, month, year]);
 
         res.status(200).json({ success: true, data: budgets });
     } catch (error) {
@@ -40,18 +40,16 @@ const getBudgets = async (req, res) => {
     }
 };
 
-// Thêm mới hoặc Cập nhật ngân sách (Upsert)
+// 2. Thêm mới hoặc Cập nhật ngân sách (Gắn chặt với user_id)
 const upsertBudget = async (req, res) => {
     try {
-        const userId = 1;
+        const userId = req.user.id; // Lấy ID chuẩn từ Token
         const { category_id, amount, month, year } = req.body;
 
         if (!category_id || !amount || !month || !year) {
             return res.status(400).json({ success: false, message: 'Vui lòng điền đủ thông tin' });
         }
 
-        // Dùng INSERT ... ON DUPLICATE KEY UPDATE
-        // Nếu tháng này đã có ngân sách cho danh mục này rồi thì chỉ đè số tiền mới lên, chưa có thì tạo mới
         const query = `
             INSERT INTO budgets (user_id, category_id, amount, month, year)
             VALUES (?, ?, ?, ?, ?)

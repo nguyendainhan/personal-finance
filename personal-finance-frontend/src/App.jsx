@@ -8,7 +8,8 @@ import Transactions from './pages/Transactions';
 import Wallets from './pages/Wallets';
 import Budgets from './pages/Budgets';
 import Plans from './pages/Plans';
-import Auth from './pages/Auth'; // Component Đăng nhập mới tạo
+import Auth from './pages/Auth'; 
+import Categories from './pages/Categories';
 
 // === BÍ KÍP TỰ ĐỘNG GẮN TOKEN VÀO AXIOS ===
 const token = localStorage.getItem('token');
@@ -43,6 +44,7 @@ function App() {
           <Route path="wallets" element={<Wallets />} />
           <Route path="budgets" element={<Budgets />} />
           <Route path="plans" element={<Plans />} />
+          <Route path="categories" element={<Categories />} />
         </Route>
       </Routes>
     </BrowserRouter>

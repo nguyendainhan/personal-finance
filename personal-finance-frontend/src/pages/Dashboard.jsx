@@ -1,24 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-const formatMoney = (amount) => {
-  return new Intl.NumberFormat('zh-TW', {
-    style: 'currency',
-    currency: 'TWD',
-    maximumFractionDigits: 0
-  }).format(amount);
+const formatMoney = (amount, currency = 'TWD') => {
+  if (currency === 'VND') return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+  if (currency === 'USD') return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount);
 };
 
 const Dashboard = () => {
-  const [summary, setSummary] = useState({ totalBalance: 0, totalExpense: 0, totalIncome: 0 });
-  const [chartData, setChartData] = useState([]);
+  const [wallets, setWallets] = useState([]);
+  const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-  // --- THÊM STATE QUẢN LÝ TRỢ LÝ AI ---
+  // === TÍNH NĂNG TỶ GIÁ NGOẠI TỆ ===
+  const [rates, setRates] = useState({});
+  const [baseCurrency, setBaseCurrency] = useState('TWD'); // Mặc định quy đổi tất cả ra Đài tệ
+
   const [aiResponse, setAiResponse] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
@@ -26,43 +27,18 @@ const Dashboard = () => {
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
-        const [walletsRes, txRes] = await Promise.all([
+        // Tải Ví, Giao dịch và Tỷ giá cùng 1 lúc
+        const [walletsRes, txRes, ratesRes] = await Promise.all([
           axios.get('http://localhost:5000/api/wallets'),
-          axios.get(`http://localhost:5000/api/transactions?month=${selectedMonth}&year=${selectedYear}`)
+          axios.get(`http://localhost:5000/api/transactions?month=${selectedMonth}&year=${selectedYear}`),
+          fetch('https://api.exchangerate-api.com/v4/latest/TWD').then(res => res.json())
         ]);
 
-        const wallets = walletsRes.data.success ? walletsRes.data.data : [];
-        const transactions = txRes.data.success ? txRes.data.data : [];
+        if (walletsRes.data.success) setWallets(walletsRes.data.data);
+        if (txRes.data.success) setTransactions(txRes.data.data);
+        if (ratesRes.rates) setRates(ratesRes.rates);
 
-        const totalBalance = wallets.reduce((sum, wallet) => sum + Number(wallet.balance), 0);
-
-        let totalExpense = 0;
-        let totalIncome = 0;
-        const expensesByCategory = {};
-
-        transactions.forEach(tx => {
-          const amount = Number(tx.amount);
-          if (tx.type === 'EXPENSE') {
-            totalExpense += amount;
-            if (!expensesByCategory[tx.category_name]) {
-              expensesByCategory[tx.category_name] = {
-                name: tx.category_name || 'Khác',
-                value: 0,
-                color: tx.category_color || '#3b82f6'
-              };
-            }
-            expensesByCategory[tx.category_name].value += amount;
-          } else if (tx.type === 'INCOME') {
-            totalIncome += amount;
-          }
-        });
-
-        setSummary({ totalBalance, totalExpense, totalIncome });
-        setChartData(Object.values(expensesByCategory));
-        
-        // Reset lại câu trả lời AI mỗi khi đổi tháng
         setAiResponse('');
-
       } catch (error) {
         console.error('Lỗi khi tải dữ liệu Dashboard:', error);
       } finally {
@@ -73,7 +49,58 @@ const Dashboard = () => {
     fetchDashboardData();
   }, [selectedMonth, selectedYear]);
 
-  // --- HÀM GỌI API PHÂN TÍCH AI ---
+  // === TÍNH TOÁN QUY ĐỔI TỰ ĐỘNG BẰNG USEMEMO ===
+  const { grandTotal, totalIncome, totalExpense, chartData } = useMemo(() => {
+    if (!rates[baseCurrency]) return { grandTotal: 0, totalIncome: 0, totalExpense: 0, chartData: [] };
+
+    // 1. Tính tổng tài sản đã quy đổi
+    let grandTotal = 0;
+    wallets.forEach(w => {
+      const curr = w.currency || 'TWD';
+      const amount = Number(w.balance);
+      if (rates[curr]) {
+        grandTotal += (amount / rates[curr]) * rates[baseCurrency];
+      }
+    });
+
+    // 2. Tính Tổng Thu/Chi và Biểu đồ chi tiêu đã quy đổi
+    let totalIncome = 0;
+    let totalExpense = 0;
+    const expensesByCategory = {};
+
+    transactions.forEach(tx => {
+      const curr = tx.currency || 'TWD';
+      const rawAmount = Number(tx.amount);
+      
+      // Quy đổi tiền giao dịch sang tiền gốc (baseCurrency)
+      let convertedAmount = 0;
+      if (rates[curr]) {
+        convertedAmount = (rawAmount / rates[curr]) * rates[baseCurrency];
+      }
+
+      if (tx.type === 'INCOME') {
+        totalIncome += convertedAmount;
+      } else if (tx.type === 'EXPENSE') {
+        totalExpense += convertedAmount;
+        if (!expensesByCategory[tx.category_name]) {
+          expensesByCategory[tx.category_name] = {
+            name: tx.category_name || 'Khác',
+            value: 0,
+            color: tx.category_color || '#3b82f6'
+          };
+        }
+        expensesByCategory[tx.category_name].value += convertedAmount;
+      }
+    });
+
+    return {
+      grandTotal,
+      totalIncome,
+      totalExpense,
+      chartData: Object.values(expensesByCategory)
+    };
+  }, [wallets, transactions, rates, baseCurrency]);
+
   const handleAskAI = async () => {
     setAiLoading(true);
     setAiResponse('');
@@ -84,7 +111,7 @@ const Dashboard = () => {
       }
     } catch (error) {
       console.error(error);
-      setAiResponse('Xin lỗi, tôi đang gặp trục trặc kết nối hoặc API Key bị lỗi. Vui lòng kiểm tra lại!');
+      setAiResponse('Xin lỗi, tôi đang gặp trục trặc kết nối. Vui lòng kiểm tra lại!');
     } finally {
       setAiLoading(false);
     }
@@ -95,45 +122,59 @@ const Dashboard = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <h2 className="text-3xl font-bold text-gray-800">Tổng quan tài chính</h2>
         
-        <div className="flex gap-2 bg-white p-2 rounded-lg shadow-sm border border-gray-200">
+        <div className="flex gap-4">
+          {/* Ô chọn Tiền tệ gốc */}
           <select 
-            className="p-2 border-none outline-none bg-transparent font-medium text-gray-700 cursor-pointer"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="p-2 border border-blue-200 rounded-lg outline-none bg-blue-50 text-blue-700 font-bold cursor-pointer"
+            value={baseCurrency}
+            onChange={(e) => setBaseCurrency(e.target.value)}
           >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-              <option key={m} value={m}>Tháng {m}</option>
-            ))}
+            <option value="TWD">Hiển thị bằng TWD</option>
+            <option value="VND">Hiển thị bằng VND</option>
+            <option value="USD">Hiển thị bằng USD</option>
           </select>
-          <div className="w-px bg-gray-300 my-2"></div>
-          <select 
-            className="p-2 border-none outline-none bg-transparent font-medium text-gray-700 cursor-pointer"
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(e.target.value)}
-          >
-            {[2025, 2026, 2027].map(y => (
-              <option key={y} value={y}>Năm {y}</option>
-            ))}
-          </select>
+
+          {/* Ô chọn Tháng/Năm */}
+          <div className="flex gap-2 bg-white p-2 rounded-lg shadow-sm border border-gray-200">
+            <select 
+              className="p-2 border-none outline-none bg-transparent font-medium text-gray-700 cursor-pointer"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                <option key={m} value={m}>Tháng {m}</option>
+              ))}
+            </select>
+            <div className="w-px bg-gray-300 my-2"></div>
+            <select 
+              className="p-2 border-none outline-none bg-transparent font-medium text-gray-700 cursor-pointer"
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+            >
+              {[2025, 2026, 2027].map(y => (
+                <option key={y} value={y}>Năm {y}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
       {loading ? (
-         <div className="text-center mt-10 text-gray-500">Đang tải dữ liệu...</div>
+         <div className="text-center mt-10 text-gray-500">Đang tải dữ liệu và cập nhật tỷ giá...</div>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-blue-500">
-              <p className="text-gray-500 text-sm font-medium mb-1">Tổng tài sản (NT$)</p>
-              <p className="text-3xl font-bold text-gray-800">{formatMoney(summary.totalBalance)}</p>
+              <p className="text-gray-500 text-sm font-medium mb-1">Tổng tài sản quy đổi</p>
+              <p className="text-3xl font-bold text-gray-800">{formatMoney(grandTotal, baseCurrency)}</p>
             </div>
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-green-500">
               <p className="text-gray-500 text-sm font-medium mb-1">Thu nhập trong tháng</p>
-              <p className="text-3xl font-bold text-green-600">{formatMoney(summary.totalIncome)}</p>
+              <p className="text-3xl font-bold text-green-600">{formatMoney(totalIncome, baseCurrency)}</p>
             </div>
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-red-500">
               <p className="text-gray-500 text-sm font-medium mb-1">Chi tiêu trong tháng</p>
-              <p className="text-3xl font-bold text-red-500">{formatMoney(summary.totalExpense)}</p>
+              <p className="text-3xl font-bold text-red-500">{formatMoney(totalExpense, baseCurrency)}</p>
             </div>
           </div>
 
@@ -150,7 +191,7 @@ const Dashboard = () => {
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => formatMoney(value)} />
+                      <Tooltip formatter={(value) => formatMoney(value, baseCurrency)} />
                       <Legend verticalAlign="bottom" height={36} />
                     </PieChart>
                   </ResponsiveContainer>
@@ -162,7 +203,7 @@ const Dashboard = () => {
               )}
             </div>
 
-            {/* CỘT 2: TRỢ LÝ AI (TÍNH NĂNG MỚI) */}
+            {/* CỘT 2: TRỢ LÝ AI */}
             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-xl shadow-sm border border-indigo-100 flex flex-col">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
@@ -190,7 +231,7 @@ const Dashboard = () => {
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full text-gray-500 text-center">
                     <span className="text-4xl mb-3 opacity-50">🤖</span>
-                    <p>Bấm nút phân tích để AI so sánh chi tiêu của tháng {selectedMonth} so với tháng {selectedMonth - 1 === 0 ? 12 : selectedMonth - 1} nhé!</p>
+                    <p>Bấm nút phân tích để AI đánh giá chi tiêu của bạn nhé!</p>
                   </div>
                 )}
               </div>

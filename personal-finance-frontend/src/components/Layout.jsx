@@ -39,6 +39,9 @@ const Layout = () => {
           <Link to="/plans" className="block px-4 py-2 text-gray-700 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition">
             💡 Kế hoạch
           </Link>
+          <Link to="/categories" className="block px-4 py-2 text-gray-700 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition">
+            🗂️ Danh mục
+          </Link>
         </nav>
 
         {/* Nút Đăng xuất ở cuối Sidebar */}
