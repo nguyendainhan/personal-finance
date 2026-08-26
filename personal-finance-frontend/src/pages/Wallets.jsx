@@ -27,7 +27,7 @@ const Wallets = () => {
     // 1. Lấy danh sách Ví
     const fetchWallets = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/wallets');
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/wallets`);
         if (res.data.success) setWallets(res.data.data);
       } catch (error) {
         console.error('Lỗi lấy ví:', error);
@@ -66,9 +66,9 @@ const Wallets = () => {
     e.preventDefault();
     try {
       if (modalType === 'add') {
-        await axios.post('http://localhost:5000/api/wallets', formData);
+        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/wallets`, formData);
       } else {
-        await axios.put(`http://localhost:5000/api/wallets/${selectedWallet.id}`, formData);
+        await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/wallets/${selectedWallet.id}`, formData);
       }
       setIsModalOpen(false);
       setRefresh(prev => prev + 1);
@@ -80,7 +80,7 @@ const Wallets = () => {
   const handleDelete = async (id) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa ví này không?')) {
       try {
-        await axios.delete(`http://localhost:5000/api/wallets/${id}`);
+        await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/wallets/${id}`);
         setRefresh(prev => prev + 1);
       } catch (error) {
         alert('Lỗi: ' + (error.response?.data?.message || error.message));

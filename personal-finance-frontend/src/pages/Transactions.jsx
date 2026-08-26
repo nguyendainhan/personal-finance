@@ -39,9 +39,9 @@ const Transactions = () => {
       setLoading(true);
       try {
         const [txRes, walletsRes, catRes] = await Promise.all([
-          axios.get(`http://localhost:5000/api/transactions?month=${selectedMonth}&year=${selectedYear}`),
-          axios.get('http://localhost:5000/api/wallets'),
-          axios.get('http://localhost:5000/api/categories')
+          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/transactions?month=${selectedMonth}&year=${selectedYear}`),
+          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/wallets`),
+          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/categories`)
         ]);
 
         if (txRes.data.success) setTransactions(txRes.data.data);
@@ -152,7 +152,7 @@ const Transactions = () => {
           };
 
           // Gọi API POST
-          await axios.post('http://localhost:5000/api/transactions', payload);
+          await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/transactions`, payload);
           successCount++;
         }
 
@@ -206,9 +206,9 @@ const Transactions = () => {
       };
 
       if (editingId) {
-        await axios.put(`http://localhost:5000/api/transactions/${editingId}`, payload);
+        await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/transactions/${editingId}`, payload);
       } else {
-        await axios.post('http://localhost:5000/api/transactions', payload);
+        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/transactions`, payload);
       }
       closeAndResetForm();
       setRefreshTrigger(prev => prev + 1);
@@ -220,7 +220,7 @@ const Transactions = () => {
   const handleDelete = async (id) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa giao dịch này?')) {
       try {
-        await axios.delete(`http://localhost:5000/api/transactions/${id}`);
+        await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/transactions/${id}`);
         setRefreshTrigger(prev => prev + 1);
       } catch (error) {
         alert('Lỗi khi xóa: ' + (error.response?.data?.message || error.message));

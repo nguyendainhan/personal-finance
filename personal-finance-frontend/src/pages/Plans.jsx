@@ -28,8 +28,8 @@ const Plans = () => {
       setLoading(true);
       try {
         const [saveRes, debtRes] = await Promise.all([
-          axios.get('http://localhost:5000/api/plans/savings'),
-          axios.get('http://localhost:5000/api/plans/debts')
+          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/savings`),
+          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/debts`)
         ]);
         if (saveRes.data.success) setSavings(saveRes.data.data);
         if (debtRes.data.success) setDebts(debtRes.data.data);
@@ -64,13 +64,13 @@ const Plans = () => {
     e.preventDefault();
     try {
       if (modalType === 'addSaving') {
-        await axios.post('http://localhost:5000/api/plans/savings', formData);
+        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/savings`, formData);
       } else if (modalType === 'updateSaving') {
-        await axios.put(`http://localhost:5000/api/plans/savings/${selectedItem.id}`, formData);
+        await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/savings/${selectedItem.id}`, formData);
       } else if (modalType === 'addDebt') {
-        await axios.post('http://localhost:5000/api/plans/debts', formData);
+        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/debts`, formData);
       } else if (modalType === 'updateDebt') {
-        await axios.put(`http://localhost:5000/api/plans/debts/${selectedItem.id}`, formData);
+        await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/debts/${selectedItem.id}`, formData);
       }
       
       setIsModalOpen(false);

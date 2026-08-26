@@ -33,8 +33,8 @@ const Budgets = () => {
       setLoading(true);
       try {
         const [budgetsRes, catRes] = await Promise.all([
-          axios.get(`http://localhost:5000/api/budgets?month=${selectedMonth}&year=${selectedYear}`),
-          axios.get('http://localhost:5000/api/categories')
+          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/budgets?month=${selectedMonth}&year=${selectedYear}`),
+          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/categories`)
         ]);
 
         if (budgetsRes.data.success) setBudgets(budgetsRes.data.data);
@@ -75,7 +75,7 @@ const Budgets = () => {
         year: selectedYear
       };
       
-      const response = await axios.post('http://localhost:5000/api/budgets', payload);
+      const response = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/budgets`, payload);
       if (response.data.success) {
         setIsModalOpen(false);
         setFormData({ ...formData, amount: '' });

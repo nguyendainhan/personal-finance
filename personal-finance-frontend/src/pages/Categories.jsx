@@ -14,7 +14,7 @@ const Categories = () => {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/categories');
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/categories`);
         if (res.data.success) setCategories(res.data.data);
       } catch (error) {
         console.error('Lỗi tải danh mục:', error);
@@ -39,9 +39,9 @@ const Categories = () => {
     e.preventDefault();
     try {
       if (modalType === 'add') {
-        await axios.post('http://localhost:5000/api/categories', formData);
+        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/categories`, formData);
       } else {
-        await axios.put(`http://localhost:5000/api/categories/${selectedCategory.id}`, formData);
+        await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/categories/${selectedCategory.id}`, formData);
       }
       setIsModalOpen(false);
       setRefresh(prev => prev + 1);
@@ -53,7 +53,7 @@ const Categories = () => {
   const handleDelete = async (id) => {
     if (window.confirm('Bạn có chắc muốn xóa danh mục này?')) {
       try {
-        await axios.delete(`http://localhost:5000/api/categories/${id}`);
+        await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/categories/${id}`);
         setRefresh(prev => prev + 1);
       } catch (error) {
         alert('Lỗi: ' + (error.response?.data?.message || error.message));

@@ -29,8 +29,8 @@ const Dashboard = () => {
       try {
         // Tải Ví, Giao dịch và Tỷ giá cùng 1 lúc
         const [walletsRes, txRes, ratesRes] = await Promise.all([
-          axios.get('http://localhost:5000/api/wallets'),
-          axios.get(`http://localhost:5000/api/transactions?month=${selectedMonth}&year=${selectedYear}`),
+          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/wallets`),
+          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/transactions?month=${selectedMonth}&year=${selectedYear}`),
           fetch('https://api.exchangerate-api.com/v4/latest/TWD').then(res => res.json())
         ]);
 
@@ -105,7 +105,7 @@ const Dashboard = () => {
     setAiLoading(true);
     setAiResponse('');
     try {
-      const response = await axios.get(`http://localhost:5000/api/ai/analyze?month=${selectedMonth}&year=${selectedYear}`);
+      const response = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/ai/analyze?month=${selectedMonth}&year=${selectedYear}`);
       if (response.data.success) {
         setAiResponse(response.data.analysis);
       }
