@@ -28,9 +28,10 @@ const addSaving = async (req, res) => {
 const updateSaving = async (req, res) => {
     try {
         const { saved_amount, status } = req.body;
+        const userId = req.user.id;
         await pool.query(
-            "UPDATE savings SET saved_amount = ?, status = ? WHERE id = ?", 
-            [saved_amount, status, req.params.id]
+            "UPDATE savings SET saved_amount = ?, status = ? WHERE id = ? AND user_id = ?", 
+            [saved_amount, status, req.params.id, userId]
         );
         res.json({ success: true, message: "Cập nhật tiến độ thành công" });
     } catch (error) {

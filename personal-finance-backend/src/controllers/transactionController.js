@@ -21,7 +21,7 @@ const getTransactions = async (req, res) => {
                 c.icon AS category_icon, 
                 c.color AS category_color,
                 w.name AS wallet_name,
-                w.currency AS currency, /* <--- BỔ SUNG DÒNG NÀY ĐỂ BIẾT LOẠI TIỀN CỦA GIAO DỊCH */
+                w.currency AS currency,
                 tw.name AS to_wallet_name
             FROM transactions t
             LEFT JOIN categories c ON t.category_id = c.id

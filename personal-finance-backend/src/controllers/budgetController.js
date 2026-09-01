@@ -40,7 +40,6 @@ const getBudgets = async (req, res) => {
     }
 };
 
-// 2. Thêm mới hoặc Cập nhật ngân sách (Gắn chặt với user_id)
 const upsertBudget = async (req, res) => {
     try {
         const userId = req.user.id; // Lấy ID chuẩn từ Token
