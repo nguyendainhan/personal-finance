@@ -39,6 +39,22 @@ const updateSaving = async (req, res) => {
     }
 };
 
+const deleteSaving = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const [result] = await pool.query(
+            "DELETE FROM savings WHERE id = ? AND user_id = ?",
+            [req.params.id, userId]
+        );
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: "Không tìm thấy mục tiêu tiết kiệm" });
+        }
+        res.json({ success: true, message: "Đã xóa mục tiêu tiết kiệm" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // 2. API KHOẢN NỢ (DEBTS)
 const getDebts = async (req, res) => {
     try {
@@ -78,4 +94,20 @@ const updateDebt = async (req, res) => {
     }
 };
 
-module.exports = { getSavings, addSaving, updateSaving, getDebts, addDebt, updateDebt };
+const deleteDebt = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const [result] = await pool.query(
+            "DELETE FROM debts WHERE id = ? AND user_id = ?",
+            [req.params.id, userId]
+        );
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: "Không tìm thấy khoản nợ" });
+        }
+        res.json({ success: true, message: "Đã xóa khoản nợ" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+module.exports = { getSavings, addSaving, updateSaving, deleteSaving, getDebts, addDebt, updateDebt, deleteDebt };

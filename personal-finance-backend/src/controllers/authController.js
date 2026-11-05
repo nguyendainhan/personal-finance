@@ -18,7 +18,33 @@ const register = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, salt);
 
         // 3. Lưu vào database
-        await pool.query('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashedPassword]);
+        const [result] = await pool.query('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashedPassword]);
+        const newUserId = result.insertId;
+
+        // 4. Tự động tạo Ví mặc định và Danh mục mẫu cho tài khoản mới
+        try {
+            await pool.query(
+                'INSERT INTO wallets (user_id, name, balance, currency) VALUES (?, ?, ?, ?)',
+                [newUserId, 'Tiền mặt', 0, 'TWD']
+            );
+
+            const defaultCategories = [
+                [newUserId, 'Tiền lương', 'INCOME', '💰', '#10b981'],
+                [newUserId, 'Thưởng & Phụ cấp', 'INCOME', '🎁', '#3b82f6'],
+                [newUserId, 'Ăn uống', 'EXPENSE', '🍜', '#ef4444'],
+                [newUserId, 'Tiền nhà & Điện nước', 'EXPENSE', '🏠', '#f97316'],
+                [newUserId, 'Di chuyển & Xăng xe', 'EXPENSE', '⛽', '#f59e0b'],
+                [newUserId, 'Mua sắm', 'EXPENSE', '🛒', '#8b5cf6'],
+                [newUserId, 'Gửi tiền về gia đình', 'EXPENSE', '💸', '#ec4899']
+            ];
+
+            await pool.query(
+                'INSERT INTO categories (user_id, name, type, icon, color) VALUES ?',
+                [defaultCategories]
+            );
+        } catch (seedErr) {
+            console.warn('Không thể tạo dữ liệu mẫu cho user mới:', seedErr.message);
+        }
 
         res.status(201).json({ success: true, message: 'Đăng ký thành công! Hãy đăng nhập.' });
     } catch (error) {

@@ -64,4 +64,25 @@ const upsertBudget = async (req, res) => {
     }
 };
 
-module.exports = { getBudgets, upsertBudget };
+const deleteBudget = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { id } = req.params;
+
+        const [result] = await pool.query(
+            'DELETE FROM budgets WHERE id = ? AND user_id = ?',
+            [id, userId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy ngân sách cần xóa' });
+        }
+
+        res.status(200).json({ success: true, message: 'Đã xóa ngân sách thành công' });
+    } catch (error) {
+        console.error('Lỗi khi xóa ngân sách:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi xóa ngân sách' });
+    }
+};
+
+module.exports = { getBudgets, upsertBudget, deleteBudget };

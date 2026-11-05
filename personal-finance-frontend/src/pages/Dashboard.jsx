@@ -4,6 +4,11 @@ import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recha
 
 const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:5000/api`;
 
+const FALLBACK_COLORS = [
+  '#3b82f6', '#ef4444', '#10b981', '#f59e0b',
+  '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'
+];
+
 const formatMoney = (amount, currency = 'TWD') => {
   if (currency === 'VND') return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
   if (currency === 'USD') return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -84,14 +89,16 @@ const Dashboard = () => {
         totalIncome += convertedAmount;
       } else if (tx.type === 'EXPENSE') {
         totalExpense += convertedAmount;
-        if (!expensesByCategory[tx.category_name]) {
-          expensesByCategory[tx.category_name] = {
-            name: tx.category_name || 'Khác',
+        const catKey = tx.category_name || 'Khác';
+        if (!expensesByCategory[catKey]) {
+          const colorIndex = Object.keys(expensesByCategory).length % FALLBACK_COLORS.length;
+          expensesByCategory[catKey] = {
+            name: catKey,
             value: 0,
-            color: tx.category_color || '#3b82f6'
+            color: tx.category_color || FALLBACK_COLORS[colorIndex]
           };
         }
-        expensesByCategory[tx.category_name].value += convertedAmount;
+        expensesByCategory[catKey].value += convertedAmount;
       }
     });
 

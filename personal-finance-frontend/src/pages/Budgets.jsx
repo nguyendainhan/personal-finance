@@ -12,6 +12,11 @@ const formatMoney = (amount) => {
   }).format(amount);
 };
 
+const renderIcon = (icon) => {
+  if (!icon || String(icon).startsWith('fa-')) return '🏷️';
+  return icon;
+};
+
 const Budgets = () => {
   const [budgets, setBudgets] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -65,6 +70,18 @@ const Budgets = () => {
       amount: budget.budget_limit
     });
     setIsModalOpen(true);
+  };
+
+  // Hàm Xóa Ngân sách
+  const handleDelete = async (id) => {
+    if (window.confirm('Bạn có chắc muốn xóa hạn mức ngân sách này?')) {
+      try {
+        await axios.delete(`${API_BASE}/budgets/${id}`);
+        setRefreshTrigger(prev => prev + 1);
+      } catch (error) {
+        alert('Lỗi khi xóa: ' + (error.response?.data?.message || error.message));
+      }
+    }
   };
 
   // Hàm Lưu Ngân sách
@@ -152,16 +169,25 @@ const Budgets = () => {
 
             return (
               <div key={budget.id} className="bg-white p-5 sm:p-6 rounded-xl shadow-xs border border-gray-100 relative group">
-                <button 
-                  onClick={() => handleEdit(budget)}
-                  className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-blue-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition"
-                  title="Sửa ngân sách"
-                >
-                  ✏️
-                </button>
+                <div className="absolute top-4 right-4 flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+                  <button 
+                    onClick={() => handleEdit(budget)}
+                    className="p-1.5 text-gray-400 hover:text-blue-500 transition"
+                    title="Sửa ngân sách"
+                  >
+                    ✏️
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(budget.id)}
+                    className="p-1.5 text-gray-400 hover:text-red-500 transition"
+                    title="Xóa ngân sách"
+                  >
+                    🗑️
+                  </button>
+                </div>
                 
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="text-3xl">{budget.category_icon || '🏷️'}</span>
+                <div className="flex items-center gap-3 mb-4 pr-14">
+                  <span className="text-3xl">{renderIcon(budget.category_icon)}</span>
                   <div>
                     <h3 className="text-lg font-semibold text-gray-800">{budget.category_name}</h3>
                     <p className="text-sm text-gray-500">Ngân sách: {formatMoney(limit)}</p>
@@ -214,7 +240,7 @@ const Budgets = () => {
                   required
                 >
                   {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                    <option key={cat.id} value={cat.id}>{renderIcon(cat.icon)} {cat.name}</option>
                   ))}
                 </select>
               </div>

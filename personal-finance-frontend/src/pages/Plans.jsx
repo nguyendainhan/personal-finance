@@ -82,6 +82,28 @@ const Plans = () => {
     }
   };
 
+  const handleDeleteSaving = async (id) => {
+    if (window.confirm('Bạn có chắc muốn xóa mục tiêu tiết kiệm này?')) {
+      try {
+        await axios.delete(`${API_BASE}/plans/savings/${id}`);
+        setRefresh(prev => prev + 1);
+      } catch (error) {
+        alert('Lỗi khi xóa: ' + (error.response?.data?.message || error.message));
+      }
+    }
+  };
+
+  const handleDeleteDebt = async (id) => {
+    if (window.confirm('Bạn có chắc muốn xóa khoản nợ/cho vay này?')) {
+      try {
+        await axios.delete(`${API_BASE}/plans/debts/${id}`);
+        setRefresh(prev => prev + 1);
+      } catch (error) {
+        alert('Lỗi khi xóa: ' + (error.response?.data?.message || error.message));
+      }
+    }
+  };
+
   const calculateProgress = (current, total) => {
     if (!total || total == 0) return 0;
     const percent = (Number(current) / Number(total)) * 100;
@@ -124,13 +146,22 @@ const Plans = () => {
                   const percent = calculateProgress(item.saved_amount, item.target_amount);
                   return (
                     <div key={item.id} className="bg-white p-4 sm:p-5 rounded-xl shadow-xs border border-gray-100">
-                      <div className="flex justify-between items-start mb-2">
+                      <div className="flex justify-between items-start gap-2 mb-2">
                         <h3 className="font-bold text-lg text-gray-800">{item.name}</h3>
-                        {item.status === 'COMPLETED' ? (
-                          <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-bold">Hoàn thành</span>
-                        ) : (
-                          <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded font-bold">Đang tích lũy</span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {item.status === 'COMPLETED' ? (
+                            <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-bold">Hoàn thành</span>
+                          ) : (
+                            <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded font-bold">Đang tích lũy</span>
+                          )}
+                          <button
+                            onClick={() => handleDeleteSaving(item.id)}
+                            className="p-1 text-gray-400 hover:text-red-500 transition"
+                            title="Xóa mục tiêu"
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </div>
                       <p className="text-sm text-gray-500 mb-4">Mục tiêu: {formatMoney(item.target_amount)} (Hạn: {new Date(item.target_date).toLocaleDateString('zh-TW')})</p>
                       
@@ -166,11 +197,20 @@ const Plans = () => {
                   const isBorrow = item.type === 'BORROW';
                   return (
                     <div key={item.id} className="bg-white p-4 sm:p-5 rounded-xl shadow-xs border border-gray-100">
-                      <div className="flex justify-between items-start mb-2">
+                      <div className="flex justify-between items-start gap-2 mb-2">
                         <h3 className="font-bold text-lg text-gray-800">{item.name}</h3>
-                        <span className={`text-xs px-2 py-1 rounded font-bold ${isBorrow ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
-                          {isBorrow ? 'Mình đi vay' : 'Cho người ta vay'}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className={`text-xs px-2 py-1 rounded font-bold ${isBorrow ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                            {isBorrow ? 'Mình đi vay' : 'Cho người ta vay'}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteDebt(item.id)}
+                            className="p-1 text-gray-400 hover:text-red-500 transition"
+                            title="Xóa khoản nợ"
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </div>
                       <p className="text-sm text-gray-500 mb-4">Tổng tiền: {formatMoney(item.total_amount)} (Hạn chót: {new Date(item.due_date).toLocaleDateString('zh-TW')})</p>
                       

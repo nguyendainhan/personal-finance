@@ -11,11 +11,33 @@ import Plans from './pages/Plans';
 import Auth from './pages/Auth'; 
 import Categories from './pages/Categories';
 
-// === BÍ KÍP TỰ ĐỘNG GẮN TOKEN VÀO AXIOS ===
+// === TỰ ĐỘNG GẮN TOKEN VÀ XỬ LÝ KHI TOKEN HẾT HẠN ===
 const token = localStorage.getItem('token');
 if (token) {
   axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 }
+
+axios.interceptors.request.use((config) => {
+  const currentToken = localStorage.getItem('token');
+  if (currentToken) {
+    config.headers.Authorization = `Bearer ${currentToken}`;
+  }
+  return config;
+});
+
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('username');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Component Vệ sĩ ở Frontend (Kiểm tra xem đã đăng nhập chưa)
 const ProtectedRoute = ({ children }) => {

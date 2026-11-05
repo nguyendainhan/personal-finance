@@ -1,0 +1,25 @@
+{
+  "name": "IceStore Finance - Quản lý chi tiêu",
+  "short_name": "IceStore",
+  "description": "Ứng dụng quản lý tài chính và chi tiêu cá nhân thông minh",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f9fafb",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
+

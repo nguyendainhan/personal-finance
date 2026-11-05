@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const navItems = [
@@ -12,7 +12,27 @@ const navItems = [
 
 const Layout = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
   const location = useLocation();
+
+  // Lắng nghe sự kiện cài đặt PWA trên điện thoại / trình duyệt
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallPWA = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   // 1. Đọc tên user từ LocalStorage (nếu không có thì để mặc định là 'User')
   const username = localStorage.getItem('username') || 'User';
@@ -58,8 +78,16 @@ const Layout = () => {
           ))}
         </nav>
 
-        {/* Nút Đăng xuất ở cuối Sidebar */}
-        <div className="p-4 border-t">
+        {/* Nút cài đặt App (nếu trình duyệt hỗ trợ) & Đăng xuất ở cuối Sidebar */}
+        <div className="p-4 border-t space-y-2">
+          {deferredPrompt && (
+            <button
+              onClick={handleInstallPWA}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition font-medium"
+            >
+              📲 Cài đặt App
+            </button>
+          )}
           <button 
             onClick={handleLogout} 
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-red-600 rounded-xl hover:bg-red-50 transition font-medium"
@@ -115,7 +143,18 @@ const Layout = () => {
               ))}
             </nav>
 
-            <div className="p-4 border-t">
+            <div className="p-4 border-t space-y-2">
+              {deferredPrompt && (
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    handleInstallPWA();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition font-medium"
+                >
+                  📲 Cài App ra màn hình chính
+                </button>
+              )}
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-red-600 bg-red-50 rounded-xl hover:bg-red-100 transition font-medium"
@@ -146,6 +185,14 @@ const Layout = () => {
           </div>
 
           <div className="flex items-center gap-2.5">
+            {deferredPrompt && (
+              <button
+                onClick={handleInstallPWA}
+                className="md:hidden text-xs bg-blue-50 text-blue-600 font-semibold px-2.5 py-1.5 rounded-lg border border-blue-200"
+              >
+                📲 Cài App
+              </button>
+            )}
             {/* Hiển thị tên thật của người đăng nhập */}
             <span className="text-xs sm:text-sm font-medium text-gray-700">
               <span className="hidden sm:inline">Xin chào, </span>{username}

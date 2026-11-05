@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'; // <-- Thêm useRef
+import { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 
@@ -14,6 +14,11 @@ const formatMoney = (amount, currency = 'TWD') => {
   }).format(amount);
 };
 
+const renderIcon = (icon) => {
+  if (!icon || String(icon).startsWith('fa-')) return '🏷️';
+  return icon;
+};
+
 const Transactions = () => {
   const [transactions, setTransactions] = useState([]);
   const [wallets, setWallets] = useState([]);
@@ -23,6 +28,12 @@ const Transactions = () => {
 
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  // === BỘ LỌC TÌM KIẾM NHANH ===
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterWallet, setFilterWallet] = useState('ALL');
+  const [filterType, setFilterType] = useState('ALL');
+  const [filterCategory, setFilterCategory] = useState('ALL');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -78,16 +89,55 @@ const Transactions = () => {
   const selectedWalletObj = wallets.find(w => String(w.id) === String(formData.wallet_id));
   const selectedCurrency = selectedWalletObj?.currency || 'TWD';
 
+  // === LỌC DANH SÁCH GIAO DỊCH THEO TỪ KHÓA, VÍ, LOẠI, DANH MỤC ===
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((tx) => {
+      if (filterType !== 'ALL' && tx.type !== filterType) return false;
+      if (
+        filterWallet !== 'ALL' &&
+        String(tx.wallet_id) !== String(filterWallet) &&
+        String(tx.to_wallet_id) !== String(filterWallet)
+      ) {
+        return false;
+      }
+      if (filterCategory !== 'ALL' && String(tx.category_id) !== String(filterCategory)) {
+        return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchNote = (tx.note || '').toLowerCase().includes(q);
+        const matchCat = (tx.category_name || '').toLowerCase().includes(q);
+        const matchWallet = (tx.wallet_name || '').toLowerCase().includes(q);
+        const matchAmount = String(tx.amount || '').includes(q);
+        if (!matchNote && !matchCat && !matchWallet && !matchAmount) return false;
+      }
+      return true;
+    });
+  }, [transactions, filterType, filterWallet, filterCategory, searchQuery]);
+
+  const isFiltering =
+    searchQuery.trim() !== '' ||
+    filterWallet !== 'ALL' ||
+    filterType !== 'ALL' ||
+    filterCategory !== 'ALL';
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setFilterWallet('ALL');
+    setFilterType('ALL');
+    setFilterCategory('ALL');
+  };
+
   // ==========================================
   // --- 1. HÀM XUẤT EXCEL ---
   // ==========================================
   const handleExportExcel = () => {
-    if (transactions.length === 0) {
-      alert('Không có dữ liệu để xuất trong tháng này!');
+    if (filteredTransactions.length === 0) {
+      alert('Không có dữ liệu để xuất!');
       return;
     }
 
-    const excelData = transactions.map((tx, index) => ({
+    const excelData = filteredTransactions.map((tx, index) => ({
       'STT': index + 1,
       'Ngày giao dịch': new Date(tx.transaction_date).toLocaleDateString('zh-TW'),
       'Loại': tx.type === 'EXPENSE' ? 'Khoản chi (-)' : tx.type === 'INCOME' ? 'Khoản thu (+)' : 'Chuyển khoản (⇄)',
@@ -245,7 +295,7 @@ const Transactions = () => {
 
   return (
     <div>
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 sm:mb-6 gap-3 sm:gap-4">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-4 sm:mb-5 gap-3 sm:gap-4">
         <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Lịch sử giao dịch</h2>
         
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto">
@@ -304,24 +354,100 @@ const Transactions = () => {
           </button>
         </div>
       </div>
+
+      {/* --- THANH TÌM KIẾM & LỌC NHANH --- */}
+      <div className="bg-white p-3.5 sm:p-4 rounded-xl shadow-xs border border-gray-100 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+          {/* Ô tìm kiếm từ khóa */}
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+            <input
+              type="text"
+              placeholder="Tìm ghi chú, danh mục, số tiền..."
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-blue-500"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          {/* Lọc theo Ví */}
+          <select
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none bg-white focus:border-blue-500 cursor-pointer"
+            value={filterWallet}
+            onChange={(e) => setFilterWallet(e.target.value)}
+          >
+            <option value="ALL">🏦 Tất cả các ví</option>
+            {wallets.map((w) => (
+              <option key={w.id} value={w.id}>
+                Ví: {w.name} ({w.currency})
+              </option>
+            ))}
+          </select>
+
+          {/* Lọc theo Loại */}
+          <select
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none bg-white focus:border-blue-500 cursor-pointer"
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+          >
+            <option value="ALL">📊 Tất cả loại giao dịch</option>
+            <option value="EXPENSE">➖ Khoản chi</option>
+            <option value="INCOME">➕ Khoản thu</option>
+            <option value="TRANSFER">⇄ Chuyển khoản</option>
+          </select>
+
+          {/* Lọc theo Danh mục */}
+          <select
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none bg-white focus:border-blue-500 cursor-pointer"
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+          >
+            <option value="ALL">🗂️ Tất cả danh mục</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {renderIcon(cat.icon)} {cat.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {isFiltering && (
+          <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-2.5 border-t border-gray-100 text-xs sm:text-sm">
+            <span className="text-gray-500">
+              Tìm thấy <strong className="text-blue-600">{filteredTransactions.length}</strong> / {transactions.length} giao dịch
+            </span>
+            <button
+              onClick={resetFilters}
+              className="text-red-500 hover:underline font-medium"
+            >
+              ✕ Xóa bộ lọc
+            </button>
+          </div>
+        )}
+      </div>
       
       {/* --- PHẦN DANH SÁCH GIAO DỊCH --- */}
       <div className="bg-white rounded-xl shadow-xs border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-gray-500">Đang tải dữ liệu...</div>
-        ) : transactions.length === 0 ? (
+        ) : filteredTransactions.length === 0 ? (
           <div className="p-8 text-center text-gray-500 text-sm sm:text-base">
-            Bạn chưa có giao dịch nào trong Tháng {selectedMonth}/{selectedYear}.
+            {isFiltering
+              ? 'Không tìm thấy giao dịch nào khớp với bộ lọc hiện tại.'
+              : `Bạn chưa có giao dịch nào trong Tháng ${selectedMonth}/${selectedYear}.`}
           </div>
         ) : (
           <>
             {/* GIAO DIỆN THẺ TRÊN ĐIỆN THOẠI (Mobile Card View) */}
             <div className="divide-y divide-gray-100 md:hidden">
-              {transactions.map((tx) => (
+              {filteredTransactions.map((tx) => (
                 <div key={tx.id} className="p-4 flex items-start justify-between gap-3 hover:bg-gray-50 transition">
                   <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-lg shrink-0">
-                      {tx.type === 'TRANSFER' ? '⇄' : (tx.category_icon || '🏷️')}
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0"
+                      style={{ backgroundColor: `${tx.category_color || '#3b82f6'}18` }}
+                    >
+                      {tx.type === 'TRANSFER' ? '⇄' : renderIcon(tx.category_icon)}
                     </div>
                     <div className="min-w-0">
                       <p className="font-semibold text-gray-800 truncate" style={{ color: tx.category_color || '#1f2937' }}>
@@ -378,14 +504,14 @@ const Transactions = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {transactions.map((tx) => (
+                  {filteredTransactions.map((tx) => (
                     <tr key={tx.id} className="border-b hover:bg-gray-50 transition">
                       <td className="p-4 text-gray-700 whitespace-nowrap">
                         {new Date(tx.transaction_date).toLocaleDateString('zh-TW')}
                       </td>
                       <td className="p-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <span className="text-xl">{tx.type === 'TRANSFER' ? '⇄' : (tx.category_icon || '🏷️')}</span>
+                          <span className="text-xl">{tx.type === 'TRANSFER' ? '⇄' : renderIcon(tx.category_icon)}</span>
                           <span className="font-medium" style={{ color: tx.category_color || '#374151' }}>
                             {tx.type === 'TRANSFER' ? 'Chuyển khoản' : (tx.category_name || 'Khác')}
                           </span>
@@ -450,7 +576,7 @@ const Transactions = () => {
                   >
                     <option value="">-- Chọn danh mục --</option>
                     {filteredCategories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                      <option key={cat.id} value={cat.id}>{renderIcon(cat.icon)} {cat.name}</option>
                     ))}
                   </select>
                 </div>
