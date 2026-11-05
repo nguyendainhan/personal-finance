@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
+const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:5000/api`;
+
 const Categories = () => {
   const [categories, setCategories] = useState([]);
   const [refresh, setRefresh] = useState(0);
@@ -14,7 +16,7 @@ const Categories = () => {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/categories`);
+        const res = await axios.get(`${API_BASE}/categories`);
         if (res.data.success) setCategories(res.data.data);
       } catch (error) {
         console.error('Lỗi tải danh mục:', error);
@@ -39,9 +41,9 @@ const Categories = () => {
     e.preventDefault();
     try {
       if (modalType === 'add') {
-        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/categories`, formData);
+        await axios.post(`${API_BASE}/categories`, formData);
       } else {
-        await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/categories/${selectedCategory.id}`, formData);
+        await axios.put(`${API_BASE}/categories/${selectedCategory.id}`, formData);
       }
       setIsModalOpen(false);
       setRefresh(prev => prev + 1);
@@ -53,7 +55,7 @@ const Categories = () => {
   const handleDelete = async (id) => {
     if (window.confirm('Bạn có chắc muốn xóa danh mục này?')) {
       try {
-        await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/categories/${id}`);
+        await axios.delete(`${API_BASE}/categories/${id}`);
         setRefresh(prev => prev + 1);
       } catch (error) {
         alert('Lỗi: ' + (error.response?.data?.message || error.message));
@@ -63,41 +65,41 @@ const Categories = () => {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl font-bold text-gray-800">Quản lý Danh mục</h2>
+      <div className="flex flex-wrap justify-between items-center gap-3 mb-5 sm:mb-6">
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Quản lý Danh mục</h2>
         <button 
           onClick={() => openModal('add')}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow"
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm sm:text-base font-medium hover:bg-blue-700 shadow-xs"
         >
           + Thêm Danh Mục
         </button>
       </div>
 
       {/* Bảng danh sách danh mục */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-100 overflow-hidden">
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="bg-gray-50 border-b text-gray-600 text-sm">
-              <th className="p-4">Tên Danh Mục</th>
-              <th className="p-4">Loại Thu/Chi</th>
-              <th className="p-4 text-right">Hành động</th>
+            <tr className="bg-gray-50 border-b text-gray-600 text-xs sm:text-sm">
+              <th className="p-3 sm:p-4">Tên Danh Mục</th>
+              <th className="p-3 sm:p-4 whitespace-nowrap">Loại Thu/Chi</th>
+              <th className="p-3 sm:p-4 text-right whitespace-nowrap">Hành động</th>
             </tr>
           </thead>
           <tbody>
             {categories.map(cat => (
               <tr key={cat.id} className="border-b hover:bg-gray-50">
-                <td className="p-4 font-medium text-gray-800">{cat.name}</td>
-                <td className="p-4">
+                <td className="p-3 sm:p-4 font-medium text-gray-800 text-sm sm:text-base">{cat.name}</td>
+                <td className="p-3 sm:p-4 whitespace-nowrap">
                   <span className={`text-xs px-2.5 py-1 rounded font-bold ${cat.type === 'INCOME' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                     {cat.type === 'INCOME' ? 'Thu nhập' : 'Chi tiêu'}
                   </span>
                 </td>
-                <td className="p-4 text-right">
-                  <button onClick={() => openModal('edit', cat)} className="text-blue-500 hover:text-blue-700 text-sm font-medium mr-4">
-                    ✏️ Sửa
+                <td className="p-3 sm:p-4 text-right whitespace-nowrap">
+                  <button onClick={() => openModal('edit', cat)} className="text-blue-500 hover:text-blue-700 text-xs sm:text-sm font-medium mr-3 sm:mr-4">
+                    ✏️ <span className="hidden sm:inline">Sửa</span>
                   </button>
-                  <button onClick={() => handleDelete(cat.id)} className="text-red-500 hover:text-red-700 text-sm font-medium">
-                    🗑️ Xóa
+                  <button onClick={() => handleDelete(cat.id)} className="text-red-500 hover:text-red-700 text-xs sm:text-sm font-medium">
+                    🗑️ <span className="hidden sm:inline">Xóa</span>
                   </button>
                 </td>
               </tr>
@@ -112,7 +114,7 @@ const Categories = () => {
       {/* MODAL THÊM / SỬA DANH MỤC */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+          <div className="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl">
             <h3 className="text-xl font-bold text-gray-800 mb-4">
               {modalType === 'add' ? 'Thêm Danh Mục' : 'Sửa Danh Mục'}
             </h3>
@@ -133,8 +135,8 @@ const Categories = () => {
               </div>
               
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg">Hủy</button>
-                <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg">Lưu lại</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg">Hủy</button>
+                <button type="submit" className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg">Lưu lại</button>
               </div>
             </form>
           </div>

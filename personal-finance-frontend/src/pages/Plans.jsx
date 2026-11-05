@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
+const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:5000/api`;
+
 const formatMoney = (amount) => {
   return new Intl.NumberFormat('zh-TW', {
     style: 'currency',
@@ -28,8 +30,8 @@ const Plans = () => {
       setLoading(true);
       try {
         const [saveRes, debtRes] = await Promise.all([
-          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/savings`),
-          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/debts`)
+          axios.get(`${API_BASE}/plans/savings`),
+          axios.get(`${API_BASE}/plans/debts`)
         ]);
         if (saveRes.data.success) setSavings(saveRes.data.data);
         if (debtRes.data.success) setDebts(debtRes.data.data);
@@ -64,13 +66,13 @@ const Plans = () => {
     e.preventDefault();
     try {
       if (modalType === 'addSaving') {
-        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/savings`, formData);
+        await axios.post(`${API_BASE}/plans/savings`, formData);
       } else if (modalType === 'updateSaving') {
-        await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/savings/${selectedItem.id}`, formData);
+        await axios.put(`${API_BASE}/plans/savings/${selectedItem.id}`, formData);
       } else if (modalType === 'addDebt') {
-        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/debts`, formData);
+        await axios.post(`${API_BASE}/plans/debts`, formData);
       } else if (modalType === 'updateDebt') {
-        await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/plans/debts/${selectedItem.id}`, formData);
+        await axios.put(`${API_BASE}/plans/debts/${selectedItem.id}`, formData);
       }
       
       setIsModalOpen(false);
@@ -88,17 +90,17 @@ const Plans = () => {
 
   return (
     <div>
-      <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-        <h2 className="text-3xl font-bold text-gray-800">Kế hoạch Tài chính</h2>
-        <div className="flex bg-gray-200 p-1 rounded-lg">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 sm:mb-6 gap-3 sm:gap-4">
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Kế hoạch Tài chính</h2>
+        <div className="flex w-full sm:w-auto bg-gray-200 p-1 rounded-lg">
           <button 
-            className={`px-6 py-2 rounded-md font-medium transition ${activeTab === 'SAVINGS' ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}
+            className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-md text-sm sm:text-base font-medium transition ${activeTab === 'SAVINGS' ? 'bg-white shadow-xs text-blue-600' : 'text-gray-600'}`}
             onClick={() => setActiveTab('SAVINGS')}
           >
             💰 Quỹ Tiết Kiệm
           </button>
           <button 
-            className={`px-6 py-2 rounded-md font-medium transition ${activeTab === 'DEBTS' ? 'bg-white shadow text-red-600' : 'text-gray-600'}`}
+            className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 rounded-md text-sm sm:text-base font-medium transition ${activeTab === 'DEBTS' ? 'bg-white shadow-xs text-red-600' : 'text-gray-600'}`}
             onClick={() => setActiveTab('DEBTS')}
           >
             💳 Quản Lý Nợ
@@ -113,15 +115,15 @@ const Plans = () => {
           {/* GIAO DIỆN TAB TIẾT KIỆM */}
           {activeTab === 'SAVINGS' && (
             <div>
-              <button onClick={() => openModal('addSaving')} className="mb-6 bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700">
+              <button onClick={() => openModal('addSaving')} className="w-full sm:w-auto mb-5 sm:mb-6 bg-blue-600 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm sm:text-base font-medium hover:bg-blue-700">
                 + Thêm mục tiêu tiết kiệm
               </button>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                 {savings.map(item => {
                   const percent = calculateProgress(item.saved_amount, item.target_amount);
                   return (
-                    <div key={item.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                    <div key={item.id} className="bg-white p-4 sm:p-5 rounded-xl shadow-xs border border-gray-100">
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="font-bold text-lg text-gray-800">{item.name}</h3>
                         {item.status === 'COMPLETED' ? (
@@ -140,7 +142,7 @@ const Plans = () => {
                         <div className="bg-blue-500 h-2.5 rounded-full transition-all" style={{ width: `${percent}%` }}></div>
                       </div>
 
-                      <button onClick={() => openModal('updateSaving', item)} className="w-full border border-blue-500 text-blue-600 py-1.5 rounded-lg hover:bg-blue-50 transition text-sm font-medium">
+                      <button onClick={() => openModal('updateSaving', item)} className="w-full border border-blue-500 text-blue-600 py-2 sm:py-1.5 rounded-lg hover:bg-blue-50 transition text-sm font-medium">
                         Cập nhật số dư
                       </button>
                     </div>
@@ -154,16 +156,16 @@ const Plans = () => {
           {/* GIAO DIỆN TAB NỢ */}
           {activeTab === 'DEBTS' && (
             <div>
-              <button onClick={() => openModal('addDebt')} className="mb-6 bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700">
+              <button onClick={() => openModal('addDebt')} className="w-full sm:w-auto mb-5 sm:mb-6 bg-red-600 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm sm:text-base font-medium hover:bg-red-700">
                 + Thêm khoản nợ / Cho vay
               </button>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                 {debts.map(item => {
                   const percent = calculateProgress(item.paid_amount, item.total_amount);
                   const isBorrow = item.type === 'BORROW';
                   return (
-                    <div key={item.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                    <div key={item.id} className="bg-white p-4 sm:p-5 rounded-xl shadow-xs border border-gray-100">
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="font-bold text-lg text-gray-800">{item.name}</h3>
                         <span className={`text-xs px-2 py-1 rounded font-bold ${isBorrow ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
@@ -180,7 +182,7 @@ const Plans = () => {
                         <div className={`${item.status === 'COMPLETED' ? 'bg-green-500' : 'bg-red-500'} h-2.5 rounded-full transition-all`} style={{ width: `${percent}%` }}></div>
                       </div>
 
-                      <button onClick={() => openModal('updateDebt', item)} className="w-full border border-gray-300 text-gray-700 py-1.5 rounded-lg hover:bg-gray-50 transition text-sm font-medium">
+                      <button onClick={() => openModal('updateDebt', item)} className="w-full border border-gray-300 text-gray-700 py-2 sm:py-1.5 rounded-lg hover:bg-gray-50 transition text-sm font-medium">
                         Cập nhật tiến độ
                       </button>
                     </div>
@@ -196,7 +198,7 @@ const Plans = () => {
       {/* MODAL XỬ LÝ CHUNG */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+          <div className="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl">
             <h3 className="text-xl font-bold text-gray-800 mb-4">
               {modalType === 'addSaving' && 'Thêm mục tiêu tiết kiệm'}
               {modalType === 'updateSaving' && 'Cập nhật tiền tiết kiệm'}
@@ -260,8 +262,8 @@ const Plans = () => {
               )}
 
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg">Hủy</button>
-                <button type="submit" className="flex-1 px-4 py-2 bg-gray-800 text-white rounded-lg">Lưu lại</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg">Hủy</button>
+                <button type="submit" className="flex-1 px-4 py-2.5 bg-gray-800 text-white rounded-lg">Lưu lại</button>
               </div>
             </form>
           </div>

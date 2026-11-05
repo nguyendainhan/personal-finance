@@ -2,6 +2,8 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
+const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:5000/api`;
+
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true); // true = Đăng nhập, false = Đăng ký
   const [formData, setFormData] = useState({ username: '', password: '' });
@@ -16,7 +18,7 @@ const Auth = () => {
 
     try {
       const endpoint = isLogin ? '/auth/login' : '/auth/register';
-      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}${endpoint}`, formData);
+      const res = await axios.post(`${API_BASE}${endpoint}`, formData);
 
       if (res.data.success) {
         if (isLogin) {
@@ -44,13 +46,13 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-4">
+      <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="bg-blue-100 text-blue-600 w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-2xl sm:text-3xl mx-auto mb-3 sm:mb-4">
             💎
           </div>
-          <h2 className="text-3xl font-bold text-gray-800">IceStore Finance</h2>
-          <p className="text-gray-500 mt-2">Quản lý tài chính cá nhân thông minh</p>
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">IceStore Finance</h2>
+          <p className="text-gray-500 text-sm sm:text-base mt-1 sm:mt-2">Quản lý tài chính cá nhân thông minh</p>
         </div>
 
         {error && (
@@ -59,13 +61,13 @@ const Auth = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
           <div> 
             <label className="block text-sm font-medium text-gray-700 mb-1">Tên đăng nhập</label>
             <input 
               type="text" 
               required 
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none transition"
+              className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none transition text-base"
               placeholder="Nhập tên đăng nhập..."
               value={formData.username}
               onChange={(e) => setFormData({...formData, username: e.target.value})}
@@ -76,7 +78,7 @@ const Auth = () => {
             <input 
               type="password" 
               required 
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none transition"
+              className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none transition text-base"
               placeholder="••••••••"
               value={formData.password}
               onChange={(e) => setFormData({...formData, password: e.target.value})}
@@ -86,7 +88,7 @@ const Auth = () => {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-200 disabled:opacity-70"
+            className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold py-3 rounded-lg transition duration-200 disabled:opacity-70"
           >
             {loading ? 'Đang xử lý...' : (isLogin ? 'Đăng Nhập' : 'Đăng Ký')}
           </button>

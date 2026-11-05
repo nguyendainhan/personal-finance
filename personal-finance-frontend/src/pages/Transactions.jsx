@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'; // <-- Thêm useRef
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 
+const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:5000/api`;
+
 const formatMoney = (amount, currency = 'TWD') => {
   if (currency === 'VND') return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
   if (currency === 'USD') return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -42,9 +44,9 @@ const Transactions = () => {
       setLoading(true);
       try {
         const [txRes, walletsRes, catRes] = await Promise.all([
-          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/transactions?month=${selectedMonth}&year=${selectedYear}`),
-          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/wallets`),
-          axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/categories`)
+          axios.get(`${API_BASE}/transactions?month=${selectedMonth}&year=${selectedYear}`),
+          axios.get(`${API_BASE}/wallets`),
+          axios.get(`${API_BASE}/categories`)
         ]);
 
         if (txRes.data.success) setTransactions(txRes.data.data);
@@ -162,7 +164,7 @@ const Transactions = () => {
           };
 
           // Gọi API POST
-          await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/transactions`, payload);
+          await axios.post(`${API_BASE}/transactions`, payload);
           successCount++;
         }
 
@@ -219,9 +221,9 @@ const Transactions = () => {
       };
 
       if (editingId) {
-        await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/transactions/${editingId}`, payload);
+        await axios.put(`${API_BASE}/transactions/${editingId}`, payload);
       } else {
-        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/transactions`, payload);
+        await axios.post(`${API_BASE}/transactions`, payload);
       }
       closeAndResetForm();
       setRefreshTrigger(prev => prev + 1);
@@ -233,7 +235,7 @@ const Transactions = () => {
   const handleDelete = async (id) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa giao dịch này?')) {
       try {
-        await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/transactions/${id}`);
+        await axios.delete(`${API_BASE}/transactions/${id}`);
         setRefreshTrigger(prev => prev + 1);
       } catch (error) {
         alert('Lỗi khi xóa: ' + (error.response?.data?.message || error.message));
@@ -243,13 +245,13 @@ const Transactions = () => {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-        <h2 className="text-3xl font-bold text-gray-800">Lịch sử giao dịch</h2>
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 sm:mb-6 gap-3 sm:gap-4">
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Lịch sử giao dịch</h2>
         
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-2 bg-white p-2 rounded-lg shadow-sm border border-gray-200">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto">
+          <div className="col-span-2 sm:col-span-1 flex justify-center gap-2 bg-white px-3 py-2 rounded-lg shadow-xs border border-gray-200">
             <select 
-              className="p-1 border-none outline-none bg-transparent font-medium text-gray-700 cursor-pointer"
+              className="p-0.5 text-sm sm:text-base border-none outline-none bg-transparent font-medium text-gray-700 cursor-pointer"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
             >
@@ -259,7 +261,7 @@ const Transactions = () => {
             </select>
             <div className="w-px bg-gray-300 my-1"></div>
             <select 
-              className="p-1 border-none outline-none bg-transparent font-medium text-gray-700 cursor-pointer"
+              className="p-0.5 text-sm sm:text-base border-none outline-none bg-transparent font-medium text-gray-700 cursor-pointer"
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
             >
@@ -281,7 +283,7 @@ const Transactions = () => {
           {/* NÚT IMPORT */}
           <button 
             onClick={() => fileInputRef.current.click()}
-            className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-medium transition shadow-sm whitespace-nowrap flex items-center gap-2"
+            className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition shadow-xs whitespace-nowrap flex items-center justify-center gap-1.5"
           >
             📤 Nhập Excel
           </button>
@@ -289,82 +291,133 @@ const Transactions = () => {
           {/* NÚT EXPORT */}
           <button 
             onClick={handleExportExcel}
-            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition shadow-sm whitespace-nowrap flex items-center gap-2"
+            className="bg-green-600 hover:bg-green-700 text-white px-3 sm:px-4 py-2 rounded-lg text-sm sm:text-base font-medium transition shadow-xs whitespace-nowrap flex items-center justify-center gap-1.5"
           >
             📥 Xuất Excel
           </button>
 
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition shadow-sm whitespace-nowrap"
+            className="col-span-2 sm:col-span-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm sm:text-base font-medium transition shadow-xs whitespace-nowrap text-center"
           >
             + Thêm giao dịch
           </button>
         </div>
       </div>
       
-      {/* --- PHẦN BẢNG --- */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      {/* --- PHẦN DANH SÁCH GIAO DỊCH --- */}
+      <div className="bg-white rounded-xl shadow-xs border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-gray-500">Đang tải dữ liệu...</div>
+        ) : transactions.length === 0 ? (
+          <div className="p-8 text-center text-gray-500 text-sm sm:text-base">
+            Bạn chưa có giao dịch nào trong Tháng {selectedMonth}/{selectedYear}.
+          </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50 text-gray-600 border-b">
-                  <th className="p-4 font-medium whitespace-nowrap">Ngày</th>
-                  <th className="p-4 font-medium whitespace-nowrap">Danh mục</th>
-                  <th className="p-4 font-medium whitespace-nowrap">Ví</th>
-                  <th className="p-4 font-medium min-w-[150px]">Ghi chú</th>
-                  <th className="p-4 font-medium text-right whitespace-nowrap">Số tiền</th>
-                  <th className="p-4 font-medium text-center whitespace-nowrap">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map((tx) => (
-                  <tr key={tx.id} className="border-b hover:bg-gray-50 transition">
-                    <td className="p-4 text-gray-700 whitespace-nowrap">
-                      {new Date(tx.transaction_date).toLocaleDateString('zh-TW')}
-                    </td>
-                    <td className="p-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl">{tx.type === 'TRANSFER' ? '⇄' : (tx.category_icon || '🏷️')}</span>
-                        <span className="font-medium" style={{ color: tx.category_color || '#374151' }}>
-                          {tx.type === 'TRANSFER' ? 'Chuyển khoản' : (tx.category_name || 'Khác')}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-gray-600 whitespace-nowrap">
-                      {tx.wallet_name} {tx.to_wallet_name ? ` ➔ ${tx.to_wallet_name}` : ''}
-                    </td>
-                    <td className="p-4 text-gray-500 text-sm">{tx.note}</td>
-                    <td className={`p-4 font-bold text-right whitespace-nowrap ${tx.type === 'EXPENSE' ? 'text-red-500' : tx.type === 'INCOME' ? 'text-green-500' : 'text-blue-500'}`}>
+          <>
+            {/* GIAO DIỆN THẺ TRÊN ĐIỆN THOẠI (Mobile Card View) */}
+            <div className="divide-y divide-gray-100 md:hidden">
+              {transactions.map((tx) => (
+                <div key={tx.id} className="p-4 flex items-start justify-between gap-3 hover:bg-gray-50 transition">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-lg shrink-0">
+                      {tx.type === 'TRANSFER' ? '⇄' : (tx.category_icon || '🏷️')}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-800 truncate" style={{ color: tx.category_color || '#1f2937' }}>
+                        {tx.type === 'TRANSFER' ? 'Chuyển khoản' : (tx.category_name || 'Khác')}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5 truncate">
+                        {tx.wallet_name} {tx.to_wallet_name ? `➔ ${tx.to_wallet_name}` : ''} • {new Date(tx.transaction_date).toLocaleDateString('zh-TW')}
+                      </p>
+                      {tx.note && (
+                        <p className="text-xs text-gray-400 mt-1 break-words">{tx.note}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0 flex flex-col items-end">
+                    <span className={`font-bold text-sm sm:text-base whitespace-nowrap ${
+                      tx.type === 'EXPENSE' ? 'text-red-500' : tx.type === 'INCOME' ? 'text-green-600' : 'text-blue-600'
+                    }`}>
                       {tx.type === 'EXPENSE' ? '-' : tx.type === 'INCOME' ? '+' : '⇄ '}
                       {formatMoney(tx.amount, tx.currency)}
-                    </td>
-                    <td className="p-4 text-center whitespace-nowrap">
-                      <button onClick={() => handleEdit(tx)} className="text-gray-400 hover:text-blue-500 transition mr-3">✏️</button>
-                      <button onClick={() => handleDelete(tx.id)} className="text-gray-400 hover:text-red-500 transition">🗑️</button>
-                    </td>
+                    </span>
+                    <div className="flex items-center gap-2 mt-2">
+                      <button
+                        onClick={() => handleEdit(tx)}
+                        className="p-1.5 rounded-md bg-gray-50 text-gray-500 hover:text-blue-600 active:bg-blue-50 text-xs"
+                        aria-label="Sửa"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => handleDelete(tx.id)}
+                        className="p-1.5 rounded-md bg-gray-50 text-gray-500 hover:text-red-600 active:bg-red-50 text-xs"
+                        aria-label="Xóa"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* GIAO DIỆN BẢNG TRÊN MÁY TÍNH (Desktop Table View) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-600 border-b">
+                    <th className="p-4 font-medium whitespace-nowrap">Ngày</th>
+                    <th className="p-4 font-medium whitespace-nowrap">Danh mục</th>
+                    <th className="p-4 font-medium whitespace-nowrap">Ví</th>
+                    <th className="p-4 font-medium min-w-[150px]">Ghi chú</th>
+                    <th className="p-4 font-medium text-right whitespace-nowrap">Số tiền</th>
+                    <th className="p-4 font-medium text-center whitespace-nowrap">Thao tác</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {transactions.length === 0 && (
-              <div className="p-8 text-center text-gray-500">
-                Bạn chưa có giao dịch nào trong Tháng {selectedMonth}/{selectedYear}.
-              </div>
-            )}
-          </div>
+                </thead>
+                <tbody>
+                  {transactions.map((tx) => (
+                    <tr key={tx.id} className="border-b hover:bg-gray-50 transition">
+                      <td className="p-4 text-gray-700 whitespace-nowrap">
+                        {new Date(tx.transaction_date).toLocaleDateString('zh-TW')}
+                      </td>
+                      <td className="p-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">{tx.type === 'TRANSFER' ? '⇄' : (tx.category_icon || '🏷️')}</span>
+                          <span className="font-medium" style={{ color: tx.category_color || '#374151' }}>
+                            {tx.type === 'TRANSFER' ? 'Chuyển khoản' : (tx.category_name || 'Khác')}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-4 text-gray-600 whitespace-nowrap">
+                        {tx.wallet_name} {tx.to_wallet_name ? ` ➔ ${tx.to_wallet_name}` : ''}
+                      </td>
+                      <td className="p-4 text-gray-500 text-sm">{tx.note}</td>
+                      <td className={`p-4 font-bold text-right whitespace-nowrap ${tx.type === 'EXPENSE' ? 'text-red-500' : tx.type === 'INCOME' ? 'text-green-500' : 'text-blue-500'}`}>
+                        {tx.type === 'EXPENSE' ? '-' : tx.type === 'INCOME' ? '+' : '⇄ '}
+                        {formatMoney(tx.amount, tx.currency)}
+                      </td>
+                      <td className="p-4 text-center whitespace-nowrap">
+                        <button onClick={() => handleEdit(tx)} className="text-gray-400 hover:text-blue-500 transition mr-3">✏️</button>
+                        <button onClick={() => handleDelete(tx.id)} className="text-gray-400 hover:text-red-500 transition">🗑️</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
       {/* --- MODAL FORM --- */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl my-auto">
             <h3 className="text-xl font-bold text-gray-800 mb-4">{editingId ? 'Sửa giao dịch' : 'Thêm giao dịch mới'}</h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-3.5 sm:space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Loại giao dịch</label>
                 <select 
@@ -462,8 +515,8 @@ const Transactions = () => {
                 />
               </div>
               <div className="flex gap-3 pt-4 border-t">
-                <button type="button" onClick={closeAndResetForm} className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg">Hủy</button>
-                <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg">{editingId ? 'Cập nhật' : 'Lưu giao dịch'}</button>
+                <button type="button" onClick={closeAndResetForm} className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg">Hủy</button>
+                <button type="submit" className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg">{editingId ? 'Cập nhật' : 'Lưu giao dịch'}</button>
               </div>
             </form>
           </div>
