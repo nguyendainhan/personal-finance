@@ -73,6 +73,14 @@ const createTransaction = async (req, res) => {
             });
         }
 
+        if (type === 'TRANSFER' && (!to_wallet_id || String(to_wallet_id) === String(wallet_id))) {
+            await connection.release();
+            return res.status(400).json({
+                success: false,
+                message: 'Vui lòng chọn ví nhận khác với ví nguồn khi chuyển khoản'
+            });
+        }
+
         // 1. Thêm giao dịch vào bảng transactions
         const query = `
             INSERT INTO transactions 
@@ -83,8 +91,8 @@ const createTransaction = async (req, res) => {
         const [result] = await connection.query(query, [
             userId,
             wallet_id,
-            to_wallet_id || null,
-            category_id || null,
+            type === 'TRANSFER' ? (to_wallet_id || null) : null,
+            type === 'TRANSFER' ? null : (category_id || null),
             amount,
             type,
             note || null,
@@ -159,16 +167,16 @@ const deleteTransaction = async (req, res) => {
 
         // 2. Thu hồi tiền trả lại ví
         if (tx.type === 'EXPENSE') {
-            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ?', [tx.amount, tx.wallet_id]);
+            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?', [tx.amount, tx.wallet_id, userId]);
         } else if (tx.type === 'INCOME') {
-            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ?', [tx.amount, tx.wallet_id]);
+            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?', [tx.amount, tx.wallet_id, userId]);
         } else if (tx.type === 'TRANSFER' && tx.to_wallet_id) {
-            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ?', [tx.amount, tx.wallet_id]); // Trả lại ví gửi
-            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ?', [tx.amount, tx.to_wallet_id]); // Trừ ví nhận
+            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?', [tx.amount, tx.wallet_id, userId]); // Trả lại ví gửi
+            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?', [tx.amount, tx.to_wallet_id, userId]); // Trừ ví nhận
         }
 
         // 3. Tiến hành xóa lịch sử
-        await connection.query('DELETE FROM transactions WHERE id = ?', [transactionId]);
+        await connection.query('DELETE FROM transactions WHERE id = ? AND user_id = ?', [transactionId, userId]);
 
         await connection.commit();
         connection.release();
@@ -191,6 +199,14 @@ const updateTransaction = async (req, res) => {
         const userId = req.user.id;
         const { wallet_id, to_wallet_id, category_id, amount, type, note, transaction_date } = req.body;
 
+        if (type === 'TRANSFER' && (!to_wallet_id || String(to_wallet_id) === String(wallet_id))) {
+            await connection.release();
+            return res.status(400).json({
+                success: false,
+                message: 'Vui lòng chọn ví nhận khác với ví nguồn khi chuyển khoản'
+            });
+        }
+
         // 1. Lấy thông tin giao dịch cũ
         const [txs] = await connection.query('SELECT * FROM transactions WHERE id = ? AND user_id = ?', [transactionId, userId]);
         if (txs.length === 0) throw new Error('Không tìm thấy giao dịch');
@@ -198,16 +214,22 @@ const updateTransaction = async (req, res) => {
 
         // 2. BƯỚC HOÀN TÁC: Trả lại tiền của giao dịch cũ về ví
         if (oldTx.type === 'EXPENSE') {
-            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ?', [oldTx.amount, oldTx.wallet_id]);
+            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?', [oldTx.amount, oldTx.wallet_id, userId]);
         } else if (oldTx.type === 'INCOME') {
-            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ?', [oldTx.amount, oldTx.wallet_id]);
+            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?', [oldTx.amount, oldTx.wallet_id, userId]);
+        } else if (oldTx.type === 'TRANSFER' && oldTx.to_wallet_id) {
+            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?', [oldTx.amount, oldTx.wallet_id, userId]);
+            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?', [oldTx.amount, oldTx.to_wallet_id, userId]);
         }
 
         // 3. BƯỚC CẬP NHẬT: Trừ/Cộng tiền theo thông tin giao dịch mới
         if (type === 'EXPENSE') {
-            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ?', [amount, wallet_id]);
+            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?', [amount, wallet_id, userId]);
         } else if (type === 'INCOME') {
-            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ?', [amount, wallet_id]);
+            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?', [amount, wallet_id, userId]);
+        } else if (type === 'TRANSFER' && to_wallet_id) {
+            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?', [amount, wallet_id, userId]);
+            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?', [amount, to_wallet_id, userId]);
         }
 
         // 4. Lưu dữ liệu mới vào bảng transactions
@@ -215,7 +237,17 @@ const updateTransaction = async (req, res) => {
             UPDATE transactions 
             SET wallet_id = ?, to_wallet_id = ?, category_id = ?, amount = ?, type = ?, note = ?, transaction_date = ?
             WHERE id = ? AND user_id = ?
-        `, [wallet_id, to_wallet_id || null, category_id || null, amount, type, note || null, transaction_date, transactionId, userId]);
+        `, [
+            wallet_id,
+            type === 'TRANSFER' ? (to_wallet_id || null) : null,
+            type === 'TRANSFER' ? null : (category_id || null),
+            amount,
+            type,
+            note || null,
+            transaction_date,
+            transactionId,
+            userId
+        ]);
 
         await connection.commit();
         connection.release();

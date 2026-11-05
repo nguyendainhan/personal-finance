@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react'; // <-- Thêm useRef
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 
-const formatMoney = (amount) => {
+const formatMoney = (amount, currency = 'TWD') => {
+  if (currency === 'VND') return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+  if (currency === 'USD') return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
   return new Intl.NumberFormat('zh-TW', {
     style: 'currency',
     currency: 'TWD',
@@ -26,6 +28,7 @@ const Transactions = () => {
     amount: '',
     type: 'EXPENSE',
     wallet_id: '',
+    to_wallet_id: '',
     category_id: '',
     transaction_date: new Date().toISOString().split('T')[0],
     note: ''
@@ -49,7 +52,11 @@ const Transactions = () => {
           const fetchedWallets = walletsRes.data.data;
           setWallets(fetchedWallets);
           if (fetchedWallets.length > 0 && !formData.wallet_id) {
-            setFormData(prev => ({ ...prev, wallet_id: fetchedWallets[0].id }));
+            setFormData(prev => ({
+              ...prev,
+              wallet_id: fetchedWallets[0].id,
+              to_wallet_id: fetchedWallets[1]?.id || ''
+            }));
           }
         }
         if (catRes.data.success) {
@@ -66,6 +73,8 @@ const Transactions = () => {
   }, [refreshTrigger, selectedMonth, selectedYear]);
 
   const filteredCategories = categories.filter(cat => cat.type === formData.type);
+  const selectedWalletObj = wallets.find(w => String(w.id) === String(formData.wallet_id));
+  const selectedCurrency = selectedWalletObj?.currency || 'TWD';
 
   // ==========================================
   // --- 1. HÀM XUẤT EXCEL ---
@@ -79,9 +88,10 @@ const Transactions = () => {
     const excelData = transactions.map((tx, index) => ({
       'STT': index + 1,
       'Ngày giao dịch': new Date(tx.transaction_date).toLocaleDateString('zh-TW'),
-      'Loại': tx.type === 'EXPENSE' ? 'Khoản chi (-)' : 'Khoản thu (+)',
-      'Danh mục': tx.category_name || 'Khác',
-      'Số tiền (TWD)': tx.type === 'EXPENSE' ? -Number(tx.amount) : Number(tx.amount),
+      'Loại': tx.type === 'EXPENSE' ? 'Khoản chi (-)' : tx.type === 'INCOME' ? 'Khoản thu (+)' : 'Chuyển khoản (⇄)',
+      'Danh mục': tx.type === 'TRANSFER' ? 'Chuyển khoản' : (tx.category_name || 'Khác'),
+      'Số tiền': tx.type === 'EXPENSE' ? -Number(tx.amount) : Number(tx.amount),
+      'Tiền tệ': tx.currency || 'TWD',
       'Ví': tx.wallet_name + (tx.to_wallet_name ? ` ➔ ${tx.to_wallet_name}` : ''),
       'Ghi chú': tx.note || ''
     }));
@@ -119,7 +129,7 @@ const Transactions = () => {
         // Chạy vòng lặp đẩy từng dòng lên Backend
         for (const row of jsonData) {
           // Lấy số tiền và tự phân loại Thu/Chi dựa vào dấu âm/dương
-          const amountRaw = Number(row['Số tiền (TWD)']);
+          const amountRaw = Number(row['Số tiền'] ?? row['Số tiền (TWD)']);
           if (isNaN(amountRaw) || amountRaw === 0) continue; // Bỏ qua dòng rác
 
           const type = amountRaw < 0 ? 'EXPENSE' : 'INCOME';
@@ -176,6 +186,7 @@ const Transactions = () => {
       amount: tx.amount,
       type: tx.type,
       wallet_id: tx.wallet_id,
+      to_wallet_id: tx.to_wallet_id || '',
       category_id: tx.category_id || '',
       transaction_date: new Date(tx.transaction_date).toISOString().split('T')[0],
       note: tx.note || ''
@@ -192,6 +203,7 @@ const Transactions = () => {
       amount: '',
       note: '',
       type: 'EXPENSE',
+      to_wallet_id: wallets.find(w => String(w.id) !== String(prev.wallet_id))?.id || '',
       category_id: '',
       transaction_date: new Date().toISOString().split('T')[0]
     }));
@@ -202,7 +214,8 @@ const Transactions = () => {
     try {
       const payload = {
         ...formData,
-        category_id: formData.category_id || (filteredCategories[0]?.id ?? null)
+        to_wallet_id: formData.type === 'TRANSFER' ? formData.to_wallet_id : null,
+        category_id: formData.type === 'TRANSFER' ? null : (formData.category_id || (filteredCategories[0]?.id ?? null))
       };
 
       if (editingId) {
@@ -303,7 +316,7 @@ const Transactions = () => {
                   <th className="p-4 font-medium whitespace-nowrap">Danh mục</th>
                   <th className="p-4 font-medium whitespace-nowrap">Ví</th>
                   <th className="p-4 font-medium min-w-[150px]">Ghi chú</th>
-                  <th className="p-4 font-medium text-right whitespace-nowrap">Số tiền (NT$)</th>
+                  <th className="p-4 font-medium text-right whitespace-nowrap">Số tiền</th>
                   <th className="p-4 font-medium text-center whitespace-nowrap">Thao tác</th>
                 </tr>
               </thead>
@@ -315,9 +328,9 @@ const Transactions = () => {
                     </td>
                     <td className="p-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <span className="text-xl">{tx.category_icon || '🏷️'}</span>
+                        <span className="text-xl">{tx.type === 'TRANSFER' ? '⇄' : (tx.category_icon || '🏷️')}</span>
                         <span className="font-medium" style={{ color: tx.category_color || '#374151' }}>
-                          {tx.category_name || 'Khác'}
+                          {tx.type === 'TRANSFER' ? 'Chuyển khoản' : (tx.category_name || 'Khác')}
                         </span>
                       </div>
                     </td>
@@ -326,8 +339,8 @@ const Transactions = () => {
                     </td>
                     <td className="p-4 text-gray-500 text-sm">{tx.note}</td>
                     <td className={`p-4 font-bold text-right whitespace-nowrap ${tx.type === 'EXPENSE' ? 'text-red-500' : tx.type === 'INCOME' ? 'text-green-500' : 'text-blue-500'}`}>
-                      {tx.type === 'EXPENSE' ? '-' : tx.type === 'INCOME' ? '+' : ''}
-                      {formatMoney(tx.amount)}
+                      {tx.type === 'EXPENSE' ? '-' : tx.type === 'INCOME' ? '+' : '⇄ '}
+                      {formatMoney(tx.amount, tx.currency)}
                     </td>
                     <td className="p-4 text-center whitespace-nowrap">
                       <button onClick={() => handleEdit(tx)} className="text-gray-400 hover:text-blue-500 transition mr-3">✏️</button>
@@ -346,7 +359,7 @@ const Transactions = () => {
         )}
       </div>
 
-      {/* --- MODAL FORM GIỮ NGUYÊN --- */}
+      {/* --- MODAL FORM --- */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
@@ -357,28 +370,40 @@ const Transactions = () => {
                 <select 
                   className="w-full border border-gray-300 rounded-lg p-2.5 outline-none"
                   value={formData.type}
-                  onChange={(e) => setFormData({...formData, type: e.target.value, category_id: ''})}
+                  onChange={(e) => {
+                    const nextType = e.target.value;
+                    const defaultToWallet = wallets.find(w => String(w.id) !== String(formData.wallet_id))?.id || '';
+                    setFormData({
+                      ...formData,
+                      type: nextType,
+                      category_id: '',
+                      to_wallet_id: nextType === 'TRANSFER' ? (formData.to_wallet_id || defaultToWallet) : ''
+                    });
+                  }}
                 >
                   <option value="EXPENSE">Khoản chi (-)</option>
                   <option value="INCOME">Khoản thu (+)</option>
+                  <option value="TRANSFER">Chuyển khoản giữa các ví (⇄)</option>
                 </select>
               </div>
+              {formData.type !== 'TRANSFER' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Danh mục</label>
+                  <select 
+                    className="w-full border border-gray-300 rounded-lg p-2.5 outline-none"
+                    value={formData.category_id}
+                    onChange={(e) => setFormData({...formData, category_id: e.target.value})}
+                    required
+                  >
+                    <option value="">-- Chọn danh mục --</option>
+                    {filteredCategories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Danh mục</label>
-                <select 
-                  className="w-full border border-gray-300 rounded-lg p-2.5 outline-none"
-                  value={formData.category_id}
-                  onChange={(e) => setFormData({...formData, category_id: e.target.value})}
-                  required
-                >
-                  <option value="">-- Chọn danh mục --</option>
-                  {filteredCategories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Số tiền (NTD / 元)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Số tiền ({selectedCurrency})</label>
                 <input 
                   type="number" 
                   required min="1"
@@ -395,10 +420,28 @@ const Transactions = () => {
                   onChange={(e) => setFormData({...formData, wallet_id: e.target.value})}
                 >
                   {wallets.map(w => (
-                    <option key={w.id} value={w.id}>{w.name} (Dư: {formatMoney(w.balance)})</option>
+                    <option key={w.id} value={w.id}>{w.name} (Dư: {formatMoney(w.balance, w.currency)})</option>
                   ))}
                 </select>
               </div>
+              {formData.type === 'TRANSFER' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Đến ví nhận</label>
+                  <select 
+                    className="w-full border border-gray-300 rounded-lg p-2.5 outline-none"
+                    value={formData.to_wallet_id}
+                    onChange={(e) => setFormData({...formData, to_wallet_id: e.target.value})}
+                    required
+                  >
+                    <option value="">-- Chọn ví nhận --</option>
+                    {wallets
+                      .filter(w => String(w.id) !== String(formData.wallet_id))
+                      .map(w => (
+                        <option key={w.id} value={w.id}>{w.name} (Dư: {formatMoney(w.balance, w.currency)})</option>
+                      ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Ngày giao dịch</label>
                 <input 

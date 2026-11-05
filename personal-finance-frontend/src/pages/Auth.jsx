@@ -60,7 +60,7 @@ const Auth = () => {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
+          <div> 
             <label className="block text-sm font-medium text-gray-700 mb-1">Tên đăng nhập</label>
             <input 
               type="text" 
