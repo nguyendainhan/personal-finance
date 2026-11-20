@@ -10,20 +10,39 @@ const formatMoney = (amount, currency = 'TWD') => {
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount);
 };
 
+const META_REGEX = /\s*\[⇄([0-9.]+)(?:\|([0-9.]+))?\]$/;
+const parseNoteMeta = (rawNote) => {
+  if (!rawNote) return { metaToAmount: null, metaRate: null };
+  const match = String(rawNote).match(META_REGEX);
+  if (!match) return { metaToAmount: null, metaRate: null };
+  return {
+    metaToAmount: match[1] ? Number(match[1]) : null,
+    metaRate: match[2] ? Number(match[2]) : null
+  };
+};
+
 const Wallets = () => {
   const [wallets, setWallets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
 
-  // States cho Modal
+  // States cho Modal Ví
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState(''); 
   const [selectedWallet, setSelectedWallet] = useState(null);
   const [formData, setFormData] = useState({ name: '', balance: 0, currency: 'TWD' });
 
-  // === TÍNH NĂNG TỶ GIÁ NGOẠI TỆ ===
-  const [rates, setRates] = useState({});
+  // === TÍNH NĂNG TỶ GIÁ NGOẠI TỆ & TÙY CHỈNH TỶ GIÁ ===
+  const [onlineRates, setOnlineRates] = useState({ TWD: 1, VND: 780, USD: 0.031 });
+  const [customVndRate, setCustomVndRate] = useState(() => localStorage.getItem('custom_twd_vnd_rate') || '');
+  const [isEditingRate, setIsEditingRate] = useState(false);
   const [baseCurrency, setBaseCurrency] = useState('TWD'); // Mặc định quy đổi tất cả ra Đài tệ
+
+  // Bảng tỷ giá thực tế đang áp dụng (ưu tiên tỷ giá cửa hàng do người dùng cài nếu có)
+  const rates = {
+    ...onlineRates,
+    VND: customVndRate && Number(customVndRate) > 0 ? Number(customVndRate) : (onlineRates.VND || 780)
+  };
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -35,7 +54,13 @@ const Wallets = () => {
         ]);
 
         const fetchedRates = ratesData?.rates || { TWD: 1, VND: 780, USD: 0.031 };
-        setRates(fetchedRates);
+        setOnlineRates(fetchedRates);
+
+        const savedVndRate = Number(localStorage.getItem('custom_twd_vnd_rate'));
+        const activeRates = {
+          ...fetchedRates,
+          VND: savedVndRate > 0 ? savedVndRate : (fetchedRates.VND || 780)
+        };
 
         if (walletsRes.data.success) {
           let currentWallets = walletsRes.data.data;
@@ -49,13 +74,14 @@ const Wallets = () => {
               if (fromW && toW && fromW.currency !== toW.currency) {
                 const rawAmt = Number(tx.amount);
                 const curBal = Number(toW.balance);
-                if (rawAmt > 0 && curBal === rawAmt && fetchedRates[fromW.currency] && fetchedRates[toW.currency]) {
-                  const savedCustom = Number(localStorage.getItem(`tx_to_amount_${tx.id}`));
+                const { metaToAmount } = parseNoteMeta(tx.note);
+                const savedCustom = metaToAmount || Number(localStorage.getItem(`tx_to_amount_${tx.id}`));
+                if (rawAmt > 0 && curBal === rawAmt && activeRates[fromW.currency] && activeRates[toW.currency]) {
                   const converted = savedCustom > 0
                     ? savedCustom
                     : (toW.currency === 'USD'
-                        ? Number(((rawAmt / fetchedRates[fromW.currency]) * fetchedRates[toW.currency]).toFixed(2))
-                        : Math.round((rawAmt / fetchedRates[fromW.currency]) * fetchedRates[toW.currency]));
+                        ? Number(((rawAmt / activeRates[fromW.currency]) * activeRates[toW.currency]).toFixed(2))
+                        : Math.round((rawAmt / activeRates[fromW.currency]) * activeRates[toW.currency]));
 
                   if (converted !== rawAmt) {
                     await axios.put(`${API_BASE}/wallets/${toW.id}`, {
@@ -83,6 +109,15 @@ const Wallets = () => {
 
     fetchAll();
   }, [refresh]);
+
+  const handleSaveCustomRate = (val) => {
+    setCustomVndRate(val);
+    if (val && Number(val) > 0) {
+      localStorage.setItem('custom_twd_vnd_rate', String(val));
+    } else {
+      localStorage.removeItem('custom_twd_vnd_rate');
+    }
+  };
 
   const openModal = (type, wallet = null) => {
     setModalType(type);
@@ -136,7 +171,6 @@ const Wallets = () => {
     wallets.forEach(w => {
       const curr = w.currency || 'TWD';
       const amount = Number(w.balance);
-      // Công thức: (Tiền / Tỷ giá của tiền đó) * Tỷ giá của tiền muốn quy đổi
       if (rates[curr] && rates[baseCurrency]) {
         grandTotal += (amount / rates[curr]) * rates[baseCurrency];
       }
@@ -156,23 +190,67 @@ const Wallets = () => {
       <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-5 sm:p-6 mb-6 sm:mb-8 text-white shadow-xl relative overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-5">
           <div>
-            <p className="text-blue-100 text-xs sm:text-sm mb-1 font-medium">Tổng tài sản (Quy đổi theo tỷ giá thực tế)</p>
+            <p className="text-blue-100 text-xs sm:text-sm mb-1 font-medium">
+              Tổng tài sản (Quy đổi theo tỷ giá: 1 TWD = {Math.round(rates.VND || 780).toLocaleString('vi-VN')} VND)
+            </p>
             <h3 className="text-3xl sm:text-5xl font-bold tracking-tight break-words">
               {Object.keys(rates).length > 0 ? formatMoney(grandTotal, baseCurrency) : 'Đang cập nhật tỷ giá...'}
             </h3>
           </div>
 
-          {/* Nút chọn tiền tệ quy đổi */}
-          <select 
-            className="self-start bg-white/20 text-white text-sm border border-white/40 rounded-lg px-3 py-1.5 outline-none cursor-pointer backdrop-blur-xs"
-            value={baseCurrency}
-            onChange={(e) => setBaseCurrency(e.target.value)}
-          >
-            <option value="TWD" className="text-gray-800">Quy đổi ra Đài tệ (TWD)</option>
-            <option value="VND" className="text-gray-800">Quy đổi ra Tiền Việt (VND)</option>
-            <option value="USD" className="text-gray-800">Quy đổi ra Đô la (USD)</option>
-          </select>
+          <div className="flex flex-wrap items-center gap-2 self-start">
+            {/* Nút mở tùy chỉnh tỷ giá */}
+            <button
+              type="button"
+              onClick={() => setIsEditingRate(!isEditingRate)}
+              className="bg-white/20 hover:bg-white/30 text-white text-xs sm:text-sm border border-white/40 rounded-lg px-3 py-1.5 transition backdrop-blur-xs"
+            >
+              💱 Đổi tỷ giá
+            </button>
+
+            {/* Nút chọn tiền tệ quy đổi */}
+            <select 
+              className="bg-white/20 text-white text-xs sm:text-sm border border-white/40 rounded-lg px-3 py-1.5 outline-none cursor-pointer backdrop-blur-xs"
+              value={baseCurrency}
+              onChange={(e) => setBaseCurrency(e.target.value)}
+            >
+              <option value="TWD" className="text-gray-800">Quy đổi ra Đài tệ (TWD)</option>
+              <option value="VND" className="text-gray-800">Quy đổi ra Tiền Việt (VND)</option>
+              <option value="USD" className="text-gray-800">Quy đổi ra Đô la (USD)</option>
+            </select>
+          </div>
         </div>
+
+        {/* KHUNG ĐIỀU CHỈNH TỶ GIÁ TIỆM / NGÂN HÀNG */}
+        {isEditingRate && (
+          <div className="mb-5 bg-white/15 border border-white/30 rounded-xl p-3.5 backdrop-blur-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="text-xs sm:text-sm">
+              <p className="font-semibold">Tùy chỉnh tỷ giá quy đổi (1 TWD = ? VND)</p>
+              <p className="text-blue-100 text-xs">
+                Tỷ giá trên mạng hiện tại: 1 TWD ≈ {Math.round(onlineRates.VND || 780).toLocaleString('vi-VN')} VND
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                step="any"
+                placeholder={String(Math.round(onlineRates.VND || 780))}
+                value={customVndRate}
+                onChange={(e) => handleSaveCustomRate(e.target.value)}
+                className="w-28 bg-white text-gray-800 font-bold text-sm px-3 py-1.5 rounded-lg outline-none"
+              />
+              {customVndRate && (
+                <button
+                  type="button"
+                  onClick={() => handleSaveCustomRate('')}
+                  className="text-xs bg-white/20 hover:bg-white/30 px-2.5 py-1.5 rounded-lg whitespace-nowrap"
+                >
+                  Dùng tỷ giá mạng
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Tách riêng từng ví */}
         <div className="flex flex-wrap gap-x-8 sm:gap-x-12 gap-y-3 pt-4 border-t border-white/20">
