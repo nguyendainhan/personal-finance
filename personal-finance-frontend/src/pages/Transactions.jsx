@@ -23,6 +23,7 @@ const Transactions = () => {
   const [transactions, setTransactions] = useState([]);
   const [wallets, setWallets] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [rates, setRates] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0); 
 
@@ -37,8 +38,10 @@ const Transactions = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [manualToAmount, setManualToAmount] = useState(false);
   const [formData, setFormData] = useState({
     amount: '',
+    to_amount: '',
     type: 'EXPENSE',
     wallet_id: '',
     to_wallet_id: '',
@@ -54,10 +57,11 @@ const Transactions = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [txRes, walletsRes, catRes] = await Promise.all([
+        const [txRes, walletsRes, catRes, ratesRes] = await Promise.all([
           axios.get(`${API_BASE}/transactions?month=${selectedMonth}&year=${selectedYear}`),
           axios.get(`${API_BASE}/wallets`),
-          axios.get(`${API_BASE}/categories`)
+          axios.get(`${API_BASE}/categories`),
+          fetch('https://api.exchangerate-api.com/v4/latest/TWD').then(res => res.json()).catch(() => ({}))
         ]);
 
         if (txRes.data.success) setTransactions(txRes.data.data);
@@ -75,6 +79,9 @@ const Transactions = () => {
         if (catRes.data.success) {
           setCategories(catRes.data.data);
         }
+        if (ratesRes && ratesRes.rates) {
+          setRates(ratesRes.rates);
+        }
       } catch (error) {
         console.error('Lỗi khi tải dữ liệu:', error);
       } finally {
@@ -88,6 +95,39 @@ const Transactions = () => {
   const filteredCategories = categories.filter(cat => cat.type === formData.type);
   const selectedWalletObj = wallets.find(w => String(w.id) === String(formData.wallet_id));
   const selectedCurrency = selectedWalletObj?.currency || 'TWD';
+
+  const targetWalletObj = wallets.find(w => String(w.id) === String(formData.to_wallet_id));
+  const targetCurrency = targetWalletObj?.currency || selectedCurrency;
+  const isCrossCurrencyTransfer = formData.type === 'TRANSFER' && formData.to_wallet_id && selectedCurrency !== targetCurrency;
+
+  // Hàm tính quy đổi tự động theo tỷ giá thực tế
+  const computeConvertedAmount = (rawAmount, fromCurr, toCurr) => {
+    const num = Number(rawAmount);
+    if (!num || isNaN(num)) return '';
+    if (fromCurr === toCurr) return String(num);
+    if (rates[fromCurr] && rates[toCurr]) {
+      const converted = (num / rates[fromCurr]) * rates[toCurr];
+      // Làm tròn đẹp: VND/TWD làm tròn số nguyên, USD giữ 2 số lẻ
+      return toCurr === 'USD' ? String(Number(converted.toFixed(2))) : String(Math.round(converted));
+    }
+    return String(num);
+  };
+
+  // Tự động cập nhật to_amount khi người dùng nhập amount hoặc đổi ví (nếu chưa sửa tay to_amount)
+  useEffect(() => {
+    if (formData.type === 'TRANSFER' && !manualToAmount) {
+      const autoVal = computeConvertedAmount(formData.amount, selectedCurrency, targetCurrency);
+      setFormData(prev => ({ ...prev, to_amount: autoVal }));
+    }
+  }, [formData.amount, formData.type, selectedCurrency, targetCurrency, rates, manualToAmount]);
+
+  // Tỷ giá tham khảo 1 đơn vị ví gửi = ? đơn vị ví nhận
+  const exchangeRateHint = useMemo(() => {
+    if (!isCrossCurrencyTransfer || !rates[selectedCurrency] || !rates[targetCurrency]) return null;
+    const oneUnit = (1 / rates[selectedCurrency]) * rates[targetCurrency];
+    const formatted = targetCurrency === 'USD' ? oneUnit.toFixed(4) : Math.round(oneUnit).toLocaleString('vi-VN');
+    return `1 ${selectedCurrency} ≈ ${formatted} ${targetCurrency}`;
+  }, [isCrossCurrencyTransfer, rates, selectedCurrency, targetCurrency]);
 
   // === LỌC DANH SÁCH GIAO DỊCH THEO TỪ KHÓA, VÍ, LOẠI, DANH MỤC ===
   const filteredTransactions = useMemo(() => {
@@ -144,6 +184,8 @@ const Transactions = () => {
       'Danh mục': tx.type === 'TRANSFER' ? 'Chuyển khoản' : (tx.category_name || 'Khác'),
       'Số tiền': tx.type === 'EXPENSE' ? -Number(tx.amount) : Number(tx.amount),
       'Tiền tệ': tx.currency || 'TWD',
+      'Số tiền ví nhận': tx.type === 'TRANSFER' ? Number(tx.to_amount || tx.amount) : '',
+      'Tiền tệ ví nhận': tx.type === 'TRANSFER' ? (tx.to_currency || tx.currency || 'TWD') : '',
       'Ví': tx.wallet_name + (tx.to_wallet_name ? ` ➔ ${tx.to_wallet_name}` : ''),
       'Ghi chú': tx.note || ''
     }));
@@ -232,10 +274,22 @@ const Transactions = () => {
     reader.readAsBinaryString(file);
   };
 
-  // --- CÁC HÀM XỬ LÝ FORM CRUD CŨ ---
+  // --- CÁC HÀM XỬ LÝ FORM CRUD ---
   const handleEdit = (tx) => {
+    const fromCurr = tx.currency || 'TWD';
+    const toCurr = tx.to_currency || fromCurr;
+    // Nếu giao dịch cũ chuyển khác tiền tệ nhưng trước đây chưa có to_amount (hoặc to_amount == amount), tự động gợi ý quy đổi lại
+    const hasSavedCustomToAmount =
+      tx.to_amount &&
+      Number(tx.to_amount) > 0 &&
+      !(fromCurr !== toCurr && Number(tx.to_amount) === Number(tx.amount));
+
+    setManualToAmount(Boolean(hasSavedCustomToAmount));
     setFormData({
       amount: tx.amount,
+      to_amount: hasSavedCustomToAmount
+        ? tx.to_amount
+        : computeConvertedAmount(tx.amount, fromCurr, toCurr),
       type: tx.type,
       wallet_id: tx.wallet_id,
       to_wallet_id: tx.to_wallet_id || '',
@@ -250,9 +304,11 @@ const Transactions = () => {
   const closeAndResetForm = () => {
     setIsModalOpen(false);
     setEditingId(null);
+    setManualToAmount(false);
     setFormData(prev => ({
       ...prev,
       amount: '',
+      to_amount: '',
       note: '',
       type: 'EXPENSE',
       to_wallet_id: wallets.find(w => String(w.id) !== String(prev.wallet_id))?.id || '',
@@ -264,9 +320,16 @@ const Transactions = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      const finalToAmount = formData.type === 'TRANSFER'
+        ? (isCrossCurrencyTransfer
+            ? (formData.to_amount || computeConvertedAmount(formData.amount, selectedCurrency, targetCurrency))
+            : formData.amount)
+        : null;
+
       const payload = {
         ...formData,
         to_wallet_id: formData.type === 'TRANSFER' ? formData.to_wallet_id : null,
+        to_amount: finalToAmount,
         category_id: formData.type === 'TRANSFER' ? null : (formData.category_id || (filteredCategories[0]?.id ?? null))
       };
 
@@ -291,6 +354,25 @@ const Transactions = () => {
         alert('Lỗi khi xóa: ' + (error.response?.data?.message || error.message));
       }
     }
+  };
+
+  // Hiển thị số tiền giao dịch (nếu chuyển khoản khác ngoại tệ thì hiện cả số tiền trừ và số tiền nhận)
+  const renderTransactionAmount = (tx) => {
+    if (tx.type === 'TRANSFER' && tx.to_currency && tx.to_currency !== tx.currency) {
+      const received = tx.to_amount && Number(tx.to_amount) > 0 ? tx.to_amount : tx.amount;
+      return (
+        <div className="flex flex-col items-end">
+          <span className="text-red-500 text-xs sm:text-sm">-{formatMoney(tx.amount, tx.currency)}</span>
+          <span className="text-green-600 text-sm sm:text-base font-bold">+{formatMoney(received, tx.to_currency)}</span>
+        </div>
+      );
+    }
+    return (
+      <span>
+        {tx.type === 'EXPENSE' ? '-' : tx.type === 'INCOME' ? '+' : '⇄ '}
+        {formatMoney(tx.amount, tx.currency)}
+      </span>
+    );
   };
 
   return (
@@ -463,12 +545,11 @@ const Transactions = () => {
                   </div>
 
                   <div className="text-right shrink-0 flex flex-col items-end">
-                    <span className={`font-bold text-sm sm:text-base whitespace-nowrap ${
+                    <div className={`font-bold text-sm sm:text-base whitespace-nowrap ${
                       tx.type === 'EXPENSE' ? 'text-red-500' : tx.type === 'INCOME' ? 'text-green-600' : 'text-blue-600'
                     }`}>
-                      {tx.type === 'EXPENSE' ? '-' : tx.type === 'INCOME' ? '+' : '⇄ '}
-                      {formatMoney(tx.amount, tx.currency)}
-                    </span>
+                      {renderTransactionAmount(tx)}
+                    </div>
                     <div className="flex items-center gap-2 mt-2">
                       <button
                         onClick={() => handleEdit(tx)}
@@ -522,8 +603,7 @@ const Transactions = () => {
                       </td>
                       <td className="p-4 text-gray-500 text-sm">{tx.note}</td>
                       <td className={`p-4 font-bold text-right whitespace-nowrap ${tx.type === 'EXPENSE' ? 'text-red-500' : tx.type === 'INCOME' ? 'text-green-500' : 'text-blue-500'}`}>
-                        {tx.type === 'EXPENSE' ? '-' : tx.type === 'INCOME' ? '+' : '⇄ '}
-                        {formatMoney(tx.amount, tx.currency)}
+                        {renderTransactionAmount(tx)}
                       </td>
                       <td className="p-4 text-center whitespace-nowrap">
                         <button onClick={() => handleEdit(tx)} className="text-gray-400 hover:text-blue-500 transition mr-3">✏️</button>
@@ -552,6 +632,7 @@ const Transactions = () => {
                   onChange={(e) => {
                     const nextType = e.target.value;
                     const defaultToWallet = wallets.find(w => String(w.id) !== String(formData.wallet_id))?.id || '';
+                    setManualToAmount(false);
                     setFormData({
                       ...formData,
                       type: nextType,
@@ -582,21 +663,19 @@ const Transactions = () => {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Số tiền ({selectedCurrency})</label>
-                <input 
-                  type="number" 
-                  required min="1"
-                  className="w-full border border-gray-300 rounded-lg p-2.5 outline-none"
-                  value={formData.amount}
-                  onChange={(e) => setFormData({...formData, amount: e.target.value})}
-                />
-              </div>
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Từ ví</label>
                 <select 
                   className="w-full border border-gray-300 rounded-lg p-2.5 outline-none"
                   value={formData.wallet_id}
-                  onChange={(e) => setFormData({...formData, wallet_id: e.target.value})}
+                  onChange={(e) => {
+                    const nextWalletId = e.target.value;
+                    const nextToWalletId =
+                      String(formData.to_wallet_id) === String(nextWalletId)
+                        ? (wallets.find(w => String(w.id) !== String(nextWalletId))?.id || '')
+                        : formData.to_wallet_id;
+                    setManualToAmount(false);
+                    setFormData({...formData, wallet_id: nextWalletId, to_wallet_id: nextToWalletId});
+                  }}
                 >
                   {wallets.map(w => (
                     <option key={w.id} value={w.id}>{w.name} (Dư: {formatMoney(w.balance, w.currency)})</option>
@@ -609,7 +688,10 @@ const Transactions = () => {
                   <select 
                     className="w-full border border-gray-300 rounded-lg p-2.5 outline-none"
                     value={formData.to_wallet_id}
-                    onChange={(e) => setFormData({...formData, to_wallet_id: e.target.value})}
+                    onChange={(e) => {
+                      setManualToAmount(false);
+                      setFormData({...formData, to_wallet_id: e.target.value});
+                    }}
                     required
                   >
                     <option value="">-- Chọn ví nhận --</option>
@@ -621,6 +703,68 @@ const Transactions = () => {
                   </select>
                 </div>
               )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {formData.type === 'TRANSFER' ? `Số tiền chuyển đi (${selectedCurrency})` : `Số tiền (${selectedCurrency})`}
+                </label>
+                <input 
+                  type="number" 
+                  required min="1"
+                  className="w-full border border-gray-300 rounded-lg p-2.5 outline-none"
+                  value={formData.amount}
+                  onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                />
+              </div>
+
+              {/* Ô QUY ĐỔI NGOẠI TỆ TỰ ĐỘNG KHI CHUYỂN GIỮA 2 VÍ KHÁC TIỀN TỆ (VD: TWD -> VND) */}
+              {isCrossCurrencyTransfer && (
+                <div className="bg-blue-50/70 p-3.5 rounded-xl border border-blue-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-semibold text-blue-900">
+                      Số tiền thực nhận ({targetCurrency})
+                    </label>
+                    {exchangeRateHint && (
+                      <span className="text-xs text-blue-600 font-medium bg-white px-2 py-0.5 rounded-md border border-blue-100">
+                        {exchangeRateHint}
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    className="w-full border border-blue-300 bg-white rounded-lg p-2.5 outline-none font-semibold text-blue-900 focus:ring-2 focus:ring-blue-500"
+                    value={formData.to_amount}
+                    onChange={(e) => {
+                      setManualToAmount(true);
+                      setFormData({ ...formData, to_amount: e.target.value });
+                    }}
+                  />
+                  <div className="flex items-center justify-between text-xs text-blue-700">
+                    <span>
+                      {formData.to_amount
+                        ? `Ví nhận sẽ cộng: ${formatMoney(formData.to_amount, targetCurrency)}`
+                        : 'Tự động tính theo tỷ giá thực tế'}
+                    </span>
+                    {manualToAmount && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualToAmount(false);
+                          setFormData(prev => ({
+                            ...prev,
+                            to_amount: computeConvertedAmount(prev.amount, selectedCurrency, targetCurrency)
+                          }));
+                        }}
+                        className="text-blue-600 underline font-medium"
+                      >
+                        Lấy lại tỷ giá tự động
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Ngày giao dịch</label>
                 <input 

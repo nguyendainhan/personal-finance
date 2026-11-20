@@ -1,4 +1,4 @@
-const CACHE_NAME = 'icestore-finance-v1';
+const CACHE_NAME = 'icestore-finance-v2';
 const STATIC_ASSETS = ['/', '/index.html', '/manifest.json', '/pwa-icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -39,4 +39,3 @@ self.addEventListener('fetch', (event) => {
       .catch(() => caches.match(request).then((cached) => cached || caches.match('/index.html')))
   );
 });
-
