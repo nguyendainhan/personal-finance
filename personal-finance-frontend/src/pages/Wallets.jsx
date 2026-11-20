@@ -26,11 +26,54 @@ const Wallets = () => {
   const [baseCurrency, setBaseCurrency] = useState('TWD'); // Mặc định quy đổi tất cả ra Đài tệ
 
   useEffect(() => {
-    // 1. Lấy danh sách Ví
-    const fetchWallets = async () => {
+    const fetchAll = async () => {
       try {
-        const res = await axios.get(`${API_BASE}/wallets`);
-        if (res.data.success) setWallets(res.data.data);
+        const [walletsRes, txRes, ratesData] = await Promise.all([
+          axios.get(`${API_BASE}/wallets`),
+          axios.get(`${API_BASE}/transactions`).catch(() => ({ data: { success: false, data: [] } })),
+          fetch('https://api.exchangerate-api.com/v4/latest/TWD').then(r => r.json()).catch(() => ({}))
+        ]);
+
+        const fetchedRates = ratesData?.rates || { TWD: 1, VND: 780, USD: 0.031 };
+        setRates(fetchedRates);
+
+        if (walletsRes.data.success) {
+          let currentWallets = walletsRes.data.data;
+          const allTxs = txRes.data?.data || [];
+
+          // Tự động đồng bộ số dư ví nhận nếu có giao dịch chuyển khoản khác tiền tệ bị cộng nhầm số tiền gốc (VD: 20,000 TWD -> 20,000 VND)
+          for (const tx of allTxs) {
+            if (tx.type === 'TRANSFER' && tx.to_wallet_id) {
+              const fromW = currentWallets.find(w => String(w.id) === String(tx.wallet_id));
+              const toW = currentWallets.find(w => String(w.id) === String(tx.to_wallet_id));
+              if (fromW && toW && fromW.currency !== toW.currency) {
+                const rawAmt = Number(tx.amount);
+                const curBal = Number(toW.balance);
+                if (rawAmt > 0 && curBal === rawAmt && fetchedRates[fromW.currency] && fetchedRates[toW.currency]) {
+                  const savedCustom = Number(localStorage.getItem(`tx_to_amount_${tx.id}`));
+                  const converted = savedCustom > 0
+                    ? savedCustom
+                    : (toW.currency === 'USD'
+                        ? Number(((rawAmt / fetchedRates[fromW.currency]) * fetchedRates[toW.currency]).toFixed(2))
+                        : Math.round((rawAmt / fetchedRates[fromW.currency]) * fetchedRates[toW.currency]));
+
+                  if (converted !== rawAmt) {
+                    await axios.put(`${API_BASE}/wallets/${toW.id}`, {
+                      name: toW.name,
+                      balance: converted,
+                      currency: toW.currency
+                    });
+                    currentWallets = currentWallets.map(w =>
+                      String(w.id) === String(toW.id) ? { ...w, balance: converted } : w
+                    );
+                  }
+                }
+              }
+            }
+          }
+
+          setWallets(currentWallets);
+        }
       } catch (error) {
         console.error('Lỗi lấy ví:', error);
       } finally {
@@ -38,19 +81,7 @@ const Wallets = () => {
       }
     };
 
-    // 2. Lấy Tỷ giá thực tế (Lấy TWD làm gốc)
-    const fetchRates = async () => {
-      try {
-        const res = await fetch('https://api.exchangerate-api.com/v4/latest/TWD');
-        const data = await res.json();
-        setRates(data.rates);
-      } catch (error) {
-        console.error('Lỗi lấy tỷ giá:', error);
-      }
-    };
-    
-    fetchWallets();
-    fetchRates();
+    fetchAll();
   }, [refresh]);
 
   const openModal = (type, wallet = null) => {

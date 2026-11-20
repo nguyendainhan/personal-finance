@@ -23,7 +23,7 @@ const Transactions = () => {
   const [transactions, setTransactions] = useState([]);
   const [wallets, setWallets] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [rates, setRates] = useState({ TWD: 1, VND: 785, USD: 0.031 });
+  const [rates, setRates] = useState({ TWD: 1, VND: 780, USD: 0.031 });
   const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0); 
 
@@ -53,6 +53,21 @@ const Transactions = () => {
   // Tham chiếu đến thẻ input file ẩn
   const fileInputRef = useRef(null);
 
+  // Hàm tính quy đổi tự động theo tỷ giá thực tế
+  const computeConvertedWithRates = (rawAmount, fromCurr, toCurr, currentRates) => {
+    const num = Number(rawAmount);
+    if (!num || isNaN(num)) return '';
+    if (fromCurr === toCurr) return String(num);
+    if (currentRates[fromCurr] && currentRates[toCurr]) {
+      const converted = (num / currentRates[fromCurr]) * currentRates[toCurr];
+      return toCurr === 'USD' ? String(Number(converted.toFixed(2))) : String(Math.round(converted));
+    }
+    return String(num);
+  };
+
+  const computeConvertedAmount = (rawAmount, fromCurr, toCurr) =>
+    computeConvertedWithRates(rawAmount, fromCurr, toCurr, rates);
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -64,23 +79,53 @@ const Transactions = () => {
           fetch('https://api.exchangerate-api.com/v4/latest/TWD').then(res => res.json()).catch(() => ({}))
         ]);
 
-        if (txRes.data.success) setTransactions(txRes.data.data);
-        if (walletsRes.data.success) {
-          const fetchedWallets = walletsRes.data.data;
-          setWallets(fetchedWallets);
-          if (fetchedWallets.length > 0 && !formData.wallet_id) {
-            setFormData(prev => ({
-              ...prev,
-              wallet_id: fetchedWallets[0].id,
-              to_wallet_id: fetchedWallets[1]?.id || ''
-            }));
+        const activeRates = ratesRes?.rates || rates;
+        if (ratesRes?.rates) {
+          setRates(ratesRes.rates);
+        }
+
+        const fetchedTxs = txRes.data.success ? txRes.data.data : [];
+        let fetchedWallets = walletsRes.data.success ? walletsRes.data.data : [];
+
+        // Tự động đồng bộ số dư ví nhận nếu giao dịch chuyển khoản khác tiền tệ trước đó chỉ mới cộng số tiền gốc (VD: 20,000 TWD -> 20,000 VND)
+        for (const tx of fetchedTxs) {
+          if (tx.type === 'TRANSFER' && tx.to_wallet_id) {
+            const fromW = fetchedWallets.find(w => String(w.id) === String(tx.wallet_id));
+            const toW = fetchedWallets.find(w => String(w.id) === String(tx.to_wallet_id));
+            if (fromW && toW && fromW.currency !== toW.currency) {
+              const rawAmt = Number(tx.amount);
+              const curBal = Number(toW.balance);
+              if (rawAmt > 0 && curBal === rawAmt) {
+                const savedCustom = Number(localStorage.getItem(`tx_to_amount_${tx.id}`));
+                const converted = savedCustom > 0
+                  ? savedCustom
+                  : Number(computeConvertedWithRates(rawAmt, fromW.currency, toW.currency, activeRates));
+                if (converted > 0 && converted !== rawAmt) {
+                  await axios.put(`${API_BASE}/wallets/${toW.id}`, {
+                    name: toW.name,
+                    balance: converted,
+                    currency: toW.currency
+                  });
+                  fetchedWallets = fetchedWallets.map(w =>
+                    String(w.id) === String(toW.id) ? { ...w, balance: converted } : w
+                  );
+                }
+              }
+            }
           }
+        }
+
+        setTransactions(fetchedTxs);
+        setWallets(fetchedWallets);
+        if (fetchedWallets.length > 0 && !formData.wallet_id) {
+          setFormData(prev => ({
+            ...prev,
+            wallet_id: fetchedWallets[0].id,
+            to_wallet_id: fetchedWallets[1]?.id || ''
+          }));
         }
         if (catRes.data.success) {
           setCategories(catRes.data.data);
-        }
-        if (ratesRes && ratesRes.rates) {
-          setRates(ratesRes.rates);
         }
       } catch (error) {
         console.error('Lỗi khi tải dữ liệu:', error);
@@ -100,18 +145,6 @@ const Transactions = () => {
   const targetCurrency = targetWalletObj?.currency || selectedCurrency;
   const isCrossCurrencyTransfer = formData.type === 'TRANSFER' && formData.to_wallet_id && selectedCurrency !== targetCurrency;
 
-  // Hàm tính quy đổi tự động theo tỷ giá thực tế
-  const computeConvertedAmount = (rawAmount, fromCurr, toCurr) => {
-    const num = Number(rawAmount);
-    if (!num || isNaN(num)) return '';
-    if (fromCurr === toCurr) return String(num);
-    if (rates[fromCurr] && rates[toCurr]) {
-      const converted = (num / rates[fromCurr]) * rates[toCurr];
-      return toCurr === 'USD' ? String(Number(converted.toFixed(2))) : String(Math.round(converted));
-    }
-    return String(num);
-  };
-
   // Tự động cập nhật to_amount khi người dùng nhập amount hoặc đổi ví (nếu chưa sửa tay to_amount)
   useEffect(() => {
     if (formData.type === 'TRANSFER' && !manualToAmount) {
@@ -127,6 +160,24 @@ const Transactions = () => {
     const formatted = targetCurrency === 'USD' ? oneUnit.toFixed(4) : Math.round(oneUnit).toLocaleString('vi-VN');
     return `1 ${selectedCurrency} ≈ ${formatted} ${targetCurrency}`;
   }, [isCrossCurrencyTransfer, rates, selectedCurrency, targetCurrency]);
+
+  // Lấy số tiền thực nhận của 1 giao dịch chuyển khoản
+  const getEffectiveReceivedAmount = (tx) => {
+    const fromWall = wallets.find(w => String(w.id) === String(tx.wallet_id));
+    const toWall = wallets.find(w => String(w.id) === String(tx.to_wallet_id));
+    const fromCurr = tx.currency || fromWall?.currency || 'TWD';
+    const toCurr = tx.to_currency || toWall?.currency || fromCurr;
+
+    if (tx.to_amount && Number(tx.to_amount) > 0 && !(fromCurr !== toCurr && Number(tx.to_amount) === Number(tx.amount))) {
+      return Number(tx.to_amount);
+    }
+    const savedLocal = Number(localStorage.getItem(`tx_to_amount_${tx.id}`));
+    if (savedLocal > 0) return savedLocal;
+    if (fromCurr !== toCurr) {
+      return Number(computeConvertedAmount(tx.amount, fromCurr, toCurr)) || Number(tx.amount);
+    }
+    return Number(tx.amount);
+  };
 
   // === LỌC DANH SÁCH GIAO DỊCH THEO TỪ KHÓA, VÍ, LOẠI, DANH MỤC ===
   const filteredTransactions = useMemo(() => {
@@ -176,18 +227,24 @@ const Transactions = () => {
       return;
     }
 
-    const excelData = filteredTransactions.map((tx, index) => ({
-      'STT': index + 1,
-      'Ngày giao dịch': new Date(tx.transaction_date).toLocaleDateString('zh-TW'),
-      'Loại': tx.type === 'EXPENSE' ? 'Khoản chi (-)' : tx.type === 'INCOME' ? 'Khoản thu (+)' : 'Chuyển khoản (⇄)',
-      'Danh mục': tx.type === 'TRANSFER' ? 'Chuyển khoản' : (tx.category_name || 'Khác'),
-      'Số tiền': tx.type === 'EXPENSE' ? -Number(tx.amount) : Number(tx.amount),
-      'Tiền tệ': tx.currency || 'TWD',
-      'Số tiền ví nhận': tx.type === 'TRANSFER' ? Number(tx.to_amount || tx.amount) : '',
-      'Tiền tệ ví nhận': tx.type === 'TRANSFER' ? (tx.to_currency || tx.currency || 'TWD') : '',
-      'Ví': tx.wallet_name + (tx.to_wallet_name ? ` ➔ ${tx.to_wallet_name}` : ''),
-      'Ghi chú': tx.note || ''
-    }));
+    const excelData = filteredTransactions.map((tx, index) => {
+      const fromWall = wallets.find(w => String(w.id) === String(tx.wallet_id));
+      const toWall = wallets.find(w => String(w.id) === String(tx.to_wallet_id));
+      const fromCurr = tx.currency || fromWall?.currency || 'TWD';
+      const toCurr = tx.to_currency || toWall?.currency || fromCurr;
+      return {
+        'STT': index + 1,
+        'Ngày giao dịch': new Date(tx.transaction_date).toLocaleDateString('zh-TW'),
+        'Loại': tx.type === 'EXPENSE' ? 'Khoản chi (-)' : tx.type === 'INCOME' ? 'Khoản thu (+)' : 'Chuyển khoản (⇄)',
+        'Danh mục': tx.type === 'TRANSFER' ? 'Chuyển khoản' : (tx.category_name || 'Khác'),
+        'Số tiền': tx.type === 'EXPENSE' ? -Number(tx.amount) : Number(tx.amount),
+        'Tiền tệ': fromCurr,
+        'Số tiền ví nhận': tx.type === 'TRANSFER' ? getEffectiveReceivedAmount(tx) : '',
+        'Tiền tệ ví nhận': tx.type === 'TRANSFER' ? toCurr : '',
+        'Ví': tx.wallet_name + (tx.to_wallet_name ? ` ➔ ${tx.to_wallet_name}` : ''),
+        'Ghi chú': tx.note || ''
+      };
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(excelData);
     const workbook = XLSX.utils.book_new();
@@ -272,9 +329,9 @@ const Transactions = () => {
     const fromCurr = tx.currency || fromWall?.currency || 'TWD';
     const toCurr = tx.to_currency || toWall?.currency || fromCurr;
     const cleanAmount = Number(tx.amount);
-    const cleanToAmount = tx.to_amount ? Number(tx.to_amount) : 0;
+    const savedLocal = Number(localStorage.getItem(`tx_to_amount_${tx.id}`));
+    const cleanToAmount = tx.to_amount ? Number(tx.to_amount) : savedLocal;
 
-    // Nếu giao dịch cũ chuyển khác tiền tệ nhưng trước đây chưa có to_amount (hoặc to_amount == amount), tự động gợi ý quy đổi lại
     const hasSavedCustomToAmount =
       cleanToAmount > 0 &&
       !(fromCurr !== toCurr && cleanToAmount === cleanAmount);
@@ -315,24 +372,76 @@ const Transactions = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      const cleanAmount = Number(formData.amount);
       const finalToAmount = formData.type === 'TRANSFER'
-        ? (isCrossCurrencyTransfer
-            ? (formData.to_amount || computeConvertedAmount(formData.amount, selectedCurrency, targetCurrency))
-            : formData.amount)
+        ? Number(
+            isCrossCurrencyTransfer
+              ? (formData.to_amount || computeConvertedAmount(cleanAmount, selectedCurrency, targetCurrency))
+              : cleanAmount
+          )
         : null;
 
       const payload = {
         ...formData,
-        amount: Number(formData.amount),
+        amount: cleanAmount,
         to_wallet_id: formData.type === 'TRANSFER' ? formData.to_wallet_id : null,
-        to_amount: finalToAmount ? Number(finalToAmount) : null,
+        to_amount: finalToAmount,
         category_id: formData.type === 'TRANSFER' ? null : (formData.category_id || (filteredCategories[0]?.id ?? null))
       };
 
       if (editingId) {
-        await axios.put(`${API_BASE}/transactions/${editingId}`, payload);
+        const oldTx = transactions.find(t => String(t.id) === String(editingId));
+        const res = await axios.put(`${API_BASE}/transactions/${editingId}`, payload);
+
+        if (formData.type === 'TRANSFER' && finalToAmount) {
+          localStorage.setItem(`tx_to_amount_${editingId}`, String(finalToAmount));
+        }
+
+        // Nếu Backend trên Render chưa kịp cập nhật bản mới (không trả về to_amount), Frontend chủ động đồng bộ số dư Ví qua API /wallets/:id
+        if (formData.type === 'TRANSFER' && targetWalletObj && res.data?.to_amount === undefined) {
+          const oldAmount = oldTx ? Number(oldTx.amount) : cleanAmount;
+          const curTargetBalance = Number(targetWalletObj.balance);
+          const oldAddedToTarget = curTargetBalance === oldAmount
+            ? oldAmount
+            : (oldTx ? getEffectiveReceivedAmount(oldTx) : oldAmount);
+
+          const nextTargetBalance = curTargetBalance - oldAddedToTarget + finalToAmount;
+          await axios.put(`${API_BASE}/wallets/${targetWalletObj.id}`, {
+            name: targetWalletObj.name,
+            balance: nextTargetBalance,
+            currency: targetWalletObj.currency
+          });
+
+          if (oldTx && selectedWalletObj && String(oldTx.wallet_id) === String(selectedWalletObj.id) && oldAmount !== cleanAmount) {
+            const nextSourceBalance = Number(selectedWalletObj.balance) + oldAmount - cleanAmount;
+            await axios.put(`${API_BASE}/wallets/${selectedWalletObj.id}`, {
+              name: selectedWalletObj.name,
+              balance: nextSourceBalance,
+              currency: selectedWalletObj.currency
+            });
+          }
+        }
       } else {
-        await axios.post(`${API_BASE}/transactions`, payload);
+        const res = await axios.post(`${API_BASE}/transactions`, payload);
+        const createdId = res.data?.data?.id;
+        if (createdId && formData.type === 'TRANSFER' && finalToAmount) {
+          localStorage.setItem(`tx_to_amount_${createdId}`, String(finalToAmount));
+        }
+
+        // Nếu Backend trên Render chưa trả về to_amount (chỉ mới cộng cleanAmount vào ví nhận), Frontend cập nhật lại đúng số tiền quy đổi cho ví nhận
+        if (
+          formData.type === 'TRANSFER' &&
+          isCrossCurrencyTransfer &&
+          targetWalletObj &&
+          res.data?.data?.to_amount === undefined
+        ) {
+          const nextTargetBalance = Number(targetWalletObj.balance) + finalToAmount;
+          await axios.put(`${API_BASE}/wallets/${targetWalletObj.id}`, {
+            name: targetWalletObj.name,
+            balance: nextTargetBalance,
+            currency: targetWalletObj.currency
+          });
+        }
       }
       closeAndResetForm();
       setRefreshTrigger(prev => prev + 1);
@@ -344,7 +453,23 @@ const Transactions = () => {
   const handleDelete = async (id) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa giao dịch này?')) {
       try {
-        await axios.delete(`${API_BASE}/transactions/${id}`);
+        const tx = transactions.find(t => String(t.id) === String(id));
+        const res = await axios.delete(`${API_BASE}/transactions/${id}`);
+
+        if (tx && tx.type === 'TRANSFER' && tx.to_wallet_id && res.data?.reverted_to_amount === undefined) {
+          const fromWall = wallets.find(w => String(w.id) === String(tx.wallet_id));
+          const toWall = wallets.find(w => String(w.id) === String(tx.to_wallet_id));
+          if (fromWall && toWall && fromWall.currency !== toWall.currency) {
+            const received = getEffectiveReceivedAmount(tx);
+            const expectedRemaining = Math.max(0, Number(toWall.balance) - received);
+            await axios.put(`${API_BASE}/wallets/${toWall.id}`, {
+              name: toWall.name,
+              balance: expectedRemaining,
+              currency: toWall.currency
+            });
+          }
+        }
+        localStorage.removeItem(`tx_to_amount_${id}`);
         setRefreshTrigger(prev => prev + 1);
       } catch (error) {
         alert('Lỗi khi xóa: ' + (error.response?.data?.message || error.message));
@@ -360,10 +485,7 @@ const Transactions = () => {
     const toCurr = tx.to_currency || toWall?.currency || fromCurr;
 
     if (tx.type === 'TRANSFER' && toCurr !== fromCurr) {
-      const received =
-        tx.to_amount && Number(tx.to_amount) > 0 && Number(tx.to_amount) !== Number(tx.amount)
-          ? tx.to_amount
-          : computeConvertedAmount(tx.amount, fromCurr, toCurr) || tx.amount;
+      const received = getEffectiveReceivedAmount(tx);
       return (
         <div className="flex flex-col items-end">
           <span className="text-red-500 text-xs sm:text-sm">-{formatMoney(tx.amount, fromCurr)}</span>
