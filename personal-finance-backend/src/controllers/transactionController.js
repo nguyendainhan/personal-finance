@@ -1,32 +1,119 @@
 const pool = require('../config/database');
 
-// Tự động kiểm tra và thêm cột to_amount vào bảng transactions (hỗ trợ chuyển tiền khác ngoại tệ TWD <-> VND <-> USD)
-let columnChecked = false;
-const ensureToAmountColumn = async () => {
-    if (columnChecked) return;
+// Tỷ giá dự phòng nếu API tỷ giá bên ngoài phản hồi chậm
+const FALLBACK_RATES = {
+    TWD: 1,
+    VND: 785,
+    USD: 0.031
+};
+
+const fetchExchangeRates = async () => {
     try {
-        const [cols] = await pool.query(`
-            SELECT COLUMN_NAME 
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA = DATABASE() 
-              AND TABLE_NAME = 'transactions' 
-              AND COLUMN_NAME = 'to_amount'
-        `);
-        if (cols.length === 0) {
-            await pool.query(`
-                ALTER TABLE transactions 
-                ADD COLUMN to_amount DECIMAL(15,2) DEFAULT NULL AFTER amount
-            `);
-            console.log('✅ Đã tự động bổ sung cột to_amount vào bảng transactions');
-        }
-        columnChecked = true;
+        const res = await fetch('https://api.exchangerate-api.com/v4/latest/TWD');
+        const data = await res.json();
+        if (data && data.rates) return data.rates;
     } catch (err) {
-        console.warn('Lưu ý khi kiểm tra cột to_amount:', err.message);
+        console.warn('Dùng tỷ giá dự phòng do không gọi được API tỷ giá:', err.message);
     }
+    return FALLBACK_RATES;
+};
+
+const convertCurrencyAmount = (amount, fromCurr = 'TWD', toCurr = 'TWD', rates = FALLBACK_RATES) => {
+    const num = Number(amount);
+    if (!num || isNaN(num)) return 0;
+    if (fromCurr === toCurr) return num;
+    const rFrom = rates[fromCurr] || FALLBACK_RATES[fromCurr] || 1;
+    const rTo = rates[toCurr] || FALLBACK_RATES[toCurr] || 1;
+    const converted = (num / rFrom) * rTo;
+    return toCurr === 'USD' ? Number(converted.toFixed(2)) : Math.round(converted);
+};
+
+// Tự động kiểm tra, thêm cột to_amount và đồng bộ lại các giao dịch chuyển khoản khác tiền tệ bị cộng thiếu trước đó
+let initPromise = null;
+const ensureToAmountColumn = async () => {
+    if (initPromise) return initPromise;
+    initPromise = (async () => {
+        try {
+            const [cols] = await pool.query(`
+                SELECT COLUMN_NAME 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                  AND TABLE_NAME = 'transactions' 
+                  AND COLUMN_NAME = 'to_amount'
+            `);
+            if (cols.length === 0) {
+                await pool.query(`
+                    ALTER TABLE transactions 
+                    ADD COLUMN to_amount DECIMAL(15,2) DEFAULT NULL AFTER amount
+                `);
+                console.log('✅ Đã tự động bổ sung cột to_amount vào bảng transactions');
+            }
+
+            // Tìm các giao dịch TRANSFER giữa 2 ví khác loại tiền tệ nhưng to_amount đang NULL hoặc bằng đúng amount gốc
+            const [unconvertedTxs] = await pool.query(`
+                SELECT 
+                    t.id, t.amount, t.to_amount, t.to_wallet_id,
+                    w1.currency AS from_currency,
+                    w2.currency AS to_currency
+                FROM transactions t
+                JOIN wallets w1 ON t.wallet_id = w1.id
+                JOIN wallets w2 ON t.to_wallet_id = w2.id
+                WHERE t.type = 'TRANSFER'
+                  AND w1.currency <> w2.currency
+                  AND (t.to_amount IS NULL OR t.to_amount = t.amount)
+            `);
+
+            if (unconvertedTxs.length > 0) {
+                const rates = await fetchExchangeRates();
+                for (const tx of unconvertedTxs) {
+                    const oldAdded = tx.to_amount && Number(tx.to_amount) > 0 ? Number(tx.to_amount) : Number(tx.amount);
+                    const converted = convertCurrencyAmount(tx.amount, tx.from_currency, tx.to_currency, rates);
+                    if (converted > 0 && converted !== oldAdded) {
+                        const diff = converted - oldAdded;
+                        await pool.query('UPDATE transactions SET to_amount = ? WHERE id = ?', [converted, tx.id]);
+                        await pool.query('UPDATE wallets SET balance = balance + ? WHERE id = ?', [diff, tx.to_wallet_id]);
+                        console.log(`✅ Đã tự động quy đổi lại giao dịch #${tx.id}: ${tx.amount} ${tx.from_currency} -> ${converted} ${tx.to_currency}`);
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn('Lưu ý khi kiểm tra cột to_amount:', err.message);
+            initPromise = null;
+        }
+    })();
+    return initPromise;
 };
 
 // Khởi chạy kiểm tra ngay khi nạp controller
 ensureToAmountColumn();
+
+// Hàm tính targetAmount chuẩn xác cho giao dịch TRANSFER
+const resolveTransferTargetAmount = async (connection, userId, walletId, toWalletId, amount, toAmountFromBody) => {
+    const rawAmount = Number(amount);
+    const rawToAmount = Number(toAmountFromBody);
+
+    const [walletRows] = await connection.query(
+        'SELECT id, currency FROM wallets WHERE id IN (?, ?) AND user_id = ?',
+        [walletId, toWalletId, userId]
+    );
+    const fromW = walletRows.find(w => String(w.id) === String(walletId));
+    const toW = walletRows.find(w => String(w.id) === String(toWalletId));
+    const fromCurr = fromW?.currency || 'TWD';
+    const toCurr = toW?.currency || fromCurr;
+
+    if (fromCurr === toCurr) {
+        return rawAmount;
+    }
+
+    // Nếu Frontend đã gửi to_amount đã quy đổi (khác với amount gốc), ưu tiên dùng số người dùng xác nhận
+    if (rawToAmount > 0 && rawToAmount !== rawAmount) {
+        return rawToAmount;
+    }
+
+    // Nếu chưa có hoặc bằng đúng amount gốc do khác tiền tệ, Backend tự động quy đổi theo tỷ giá
+    const rates = await fetchExchangeRates();
+    return convertCurrencyAmount(rawAmount, fromCurr, toCurr, rates);
+};
 
 const getTransactions = async (req, res) => {
     try {
@@ -113,9 +200,9 @@ const createTransaction = async (req, res) => {
             });
         }
 
-        // Số tiền thực cộng vào ví đích (nếu chuyển khoản khác tiền tệ thì lấy to_amount, nếu cùng tiền tệ thì bằng amount)
+        // Tính số tiền thực cộng vào ví đích
         const targetAmount = type === 'TRANSFER'
-            ? (to_amount && Number(to_amount) > 0 ? Number(to_amount) : Number(amount))
+            ? await resolveTransferTargetAmount(connection, userId, wallet_id, to_wallet_id, amount, to_amount)
             : null;
 
         // 1. Thêm giao dịch vào bảng transactions
@@ -139,13 +226,11 @@ const createTransaction = async (req, res) => {
 
         // 2. TỰ ĐỘNG CẬP NHẬT SỐ DƯ VÍ
         if (type === 'EXPENSE') {
-            // Chi tiêu -> Trừ tiền trong ví nguồn
             await connection.query(
                 'UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?',
                 [amount, wallet_id, userId]
             );
         } else if (type === 'INCOME') {
-            // Thu nhập -> Cộng tiền vào ví
             await connection.query(
                 'UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?',
                 [amount, wallet_id, userId]
@@ -211,9 +296,9 @@ const deleteTransaction = async (req, res) => {
         } else if (tx.type === 'INCOME') {
             await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?', [tx.amount, tx.wallet_id, userId]);
         } else if (tx.type === 'TRANSFER' && tx.to_wallet_id) {
-            const oldTargetAmount = tx.to_amount && Number(tx.to_amount) > 0 ? tx.to_amount : tx.amount;
-            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?', [tx.amount, tx.wallet_id, userId]); // Trả lại ví gửi
-            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?', [oldTargetAmount, tx.to_wallet_id, userId]); // Trừ đúng số tiền đã nhận ở ví nhận
+            const oldTargetAmount = tx.to_amount && Number(tx.to_amount) > 0 ? Number(tx.to_amount) : Number(tx.amount);
+            await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?', [tx.amount, tx.wallet_id, userId]);
+            await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?', [oldTargetAmount, tx.to_wallet_id, userId]);
         }
 
         // 3. Tiến hành xóa lịch sử
@@ -260,13 +345,13 @@ const updateTransaction = async (req, res) => {
         } else if (oldTx.type === 'INCOME') {
             await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?', [oldTx.amount, oldTx.wallet_id, userId]);
         } else if (oldTx.type === 'TRANSFER' && oldTx.to_wallet_id) {
-            const oldTargetAmount = oldTx.to_amount && Number(oldTx.to_amount) > 0 ? oldTx.to_amount : oldTx.amount;
+            const oldTargetAmount = oldTx.to_amount && Number(oldTx.to_amount) > 0 ? Number(oldTx.to_amount) : Number(oldTx.amount);
             await connection.query('UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?', [oldTx.amount, oldTx.wallet_id, userId]);
             await connection.query('UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?', [oldTargetAmount, oldTx.to_wallet_id, userId]);
         }
 
         const newTargetAmount = type === 'TRANSFER'
-            ? (to_amount && Number(to_amount) > 0 ? Number(to_amount) : Number(amount))
+            ? await resolveTransferTargetAmount(connection, userId, wallet_id, to_wallet_id, amount, to_amount)
             : null;
 
         // 3. BƯỚC CẬP NHẬT: Trừ/Cộng tiền theo thông tin giao dịch mới

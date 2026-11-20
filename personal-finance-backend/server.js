@@ -27,7 +27,7 @@ pool.query('SELECT 1 + 1 AS solution')
 
 // Route cơ bản
 app.get('/', (req, res) => {
-    res.json({ message: 'Welcome to IceStore Finance API' });
+    res.json({ message: 'Welcome to IceStore Finance API', version: '2.2.0' });
 });
 
 const PORT = process.env.PORT || 5000;

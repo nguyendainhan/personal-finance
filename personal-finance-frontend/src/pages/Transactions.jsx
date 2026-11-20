@@ -23,7 +23,7 @@ const Transactions = () => {
   const [transactions, setTransactions] = useState([]);
   const [wallets, setWallets] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [rates, setRates] = useState({});
+  const [rates, setRates] = useState({ TWD: 1, VND: 785, USD: 0.031 });
   const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0); 
 
@@ -107,7 +107,6 @@ const Transactions = () => {
     if (fromCurr === toCurr) return String(num);
     if (rates[fromCurr] && rates[toCurr]) {
       const converted = (num / rates[fromCurr]) * rates[toCurr];
-      // Làm tròn đẹp: VND/TWD làm tròn số nguyên, USD giữ 2 số lẻ
       return toCurr === 'USD' ? String(Number(converted.toFixed(2))) : String(Math.round(converted));
     }
     return String(num);
@@ -210,7 +209,6 @@ const Transactions = () => {
         const workbook = XLSX.read(data, { type: 'binary' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
-        // Chuyển Sheet thành mảng JSON
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
         if (jsonData.length === 0) {
@@ -220,24 +218,19 @@ const Transactions = () => {
 
         let successCount = 0;
         
-        // Chạy vòng lặp đẩy từng dòng lên Backend
         for (const row of jsonData) {
-          // Lấy số tiền và tự phân loại Thu/Chi dựa vào dấu âm/dương
           const amountRaw = Number(row['Số tiền'] ?? row['Số tiền (TWD)']);
-          if (isNaN(amountRaw) || amountRaw === 0) continue; // Bỏ qua dòng rác
+          if (isNaN(amountRaw) || amountRaw === 0) continue;
 
           const type = amountRaw < 0 ? 'EXPENSE' : 'INCOME';
           const amount = Math.abs(amountRaw);
 
-          // Khớp tên Ví (bỏ phần text chuyển tiền nếu có)
           const walletName = row['Ví'] ? String(row['Ví']).split(' ➔ ')[0].trim() : '';
           const matchedWallet = wallets.find(w => w.name === walletName) || wallets[0];
 
-          // Khớp tên Danh mục
           const catName = row['Danh mục'];
           const matchedCat = categories.find(c => c.name === catName) || categories[0];
 
-          // Khớp ngày tháng
           let txDate = new Date().toISOString().split('T')[0];
           if (row['Ngày giao dịch']) {
             const parsedDate = new Date(row['Ngày giao dịch']);
@@ -255,19 +248,17 @@ const Transactions = () => {
             note: row['Ghi chú'] || 'Import từ Excel'
           };
 
-          // Gọi API POST
           await axios.post(`${API_BASE}/transactions`, payload);
           successCount++;
         }
 
         alert(`🎉 Đã nhập thành công ${successCount} giao dịch từ file Excel!`);
-        setRefreshTrigger(prev => prev + 1); // Bóp cò để reload bảng và tổng tiền
+        setRefreshTrigger(prev => prev + 1);
       } catch (error) {
         console.error(error);
         alert('Có lỗi xảy ra khi đọc file Excel! Vui lòng đảm bảo file đúng định dạng.');
       }
       
-      // Reset input để có thể click tải lại cùng 1 file nếu cần
       e.target.value = null; 
     };
     
@@ -276,20 +267,24 @@ const Transactions = () => {
 
   // --- CÁC HÀM XỬ LÝ FORM CRUD ---
   const handleEdit = (tx) => {
-    const fromCurr = tx.currency || 'TWD';
-    const toCurr = tx.to_currency || fromCurr;
+    const fromWall = wallets.find(w => String(w.id) === String(tx.wallet_id));
+    const toWall = wallets.find(w => String(w.id) === String(tx.to_wallet_id));
+    const fromCurr = tx.currency || fromWall?.currency || 'TWD';
+    const toCurr = tx.to_currency || toWall?.currency || fromCurr;
+    const cleanAmount = Number(tx.amount);
+    const cleanToAmount = tx.to_amount ? Number(tx.to_amount) : 0;
+
     // Nếu giao dịch cũ chuyển khác tiền tệ nhưng trước đây chưa có to_amount (hoặc to_amount == amount), tự động gợi ý quy đổi lại
     const hasSavedCustomToAmount =
-      tx.to_amount &&
-      Number(tx.to_amount) > 0 &&
-      !(fromCurr !== toCurr && Number(tx.to_amount) === Number(tx.amount));
+      cleanToAmount > 0 &&
+      !(fromCurr !== toCurr && cleanToAmount === cleanAmount);
 
     setManualToAmount(Boolean(hasSavedCustomToAmount));
     setFormData({
-      amount: tx.amount,
+      amount: String(cleanAmount),
       to_amount: hasSavedCustomToAmount
-        ? tx.to_amount
-        : computeConvertedAmount(tx.amount, fromCurr, toCurr),
+        ? String(cleanToAmount)
+        : computeConvertedAmount(cleanAmount, fromCurr, toCurr),
       type: tx.type,
       wallet_id: tx.wallet_id,
       to_wallet_id: tx.to_wallet_id || '',
@@ -328,8 +323,9 @@ const Transactions = () => {
 
       const payload = {
         ...formData,
+        amount: Number(formData.amount),
         to_wallet_id: formData.type === 'TRANSFER' ? formData.to_wallet_id : null,
-        to_amount: finalToAmount,
+        to_amount: finalToAmount ? Number(finalToAmount) : null,
         category_id: formData.type === 'TRANSFER' ? null : (formData.category_id || (filteredCategories[0]?.id ?? null))
       };
 
@@ -358,19 +354,27 @@ const Transactions = () => {
 
   // Hiển thị số tiền giao dịch (nếu chuyển khoản khác ngoại tệ thì hiện cả số tiền trừ và số tiền nhận)
   const renderTransactionAmount = (tx) => {
-    if (tx.type === 'TRANSFER' && tx.to_currency && tx.to_currency !== tx.currency) {
-      const received = tx.to_amount && Number(tx.to_amount) > 0 ? tx.to_amount : tx.amount;
+    const fromWall = wallets.find(w => String(w.id) === String(tx.wallet_id));
+    const toWall = wallets.find(w => String(w.id) === String(tx.to_wallet_id));
+    const fromCurr = tx.currency || fromWall?.currency || 'TWD';
+    const toCurr = tx.to_currency || toWall?.currency || fromCurr;
+
+    if (tx.type === 'TRANSFER' && toCurr !== fromCurr) {
+      const received =
+        tx.to_amount && Number(tx.to_amount) > 0 && Number(tx.to_amount) !== Number(tx.amount)
+          ? tx.to_amount
+          : computeConvertedAmount(tx.amount, fromCurr, toCurr) || tx.amount;
       return (
         <div className="flex flex-col items-end">
-          <span className="text-red-500 text-xs sm:text-sm">-{formatMoney(tx.amount, tx.currency)}</span>
-          <span className="text-green-600 text-sm sm:text-base font-bold">+{formatMoney(received, tx.to_currency)}</span>
+          <span className="text-red-500 text-xs sm:text-sm">-{formatMoney(tx.amount, fromCurr)}</span>
+          <span className="text-green-600 text-sm sm:text-base font-bold">+{formatMoney(received, toCurr)}</span>
         </div>
       );
     }
     return (
       <span>
         {tx.type === 'EXPENSE' ? '-' : tx.type === 'INCOME' ? '+' : '⇄ '}
-        {formatMoney(tx.amount, tx.currency)}
+        {formatMoney(tx.amount, fromCurr)}
       </span>
     );
   };
@@ -709,6 +713,7 @@ const Transactions = () => {
                 </label>
                 <input 
                   type="number" 
+                  step="any"
                   required min="1"
                   className="w-full border border-gray-300 rounded-lg p-2.5 outline-none"
                   value={formData.amount}
@@ -731,6 +736,7 @@ const Transactions = () => {
                   </div>
                   <input
                     type="number"
+                    step="any"
                     required
                     min="1"
                     className="w-full border border-blue-300 bg-white rounded-lg p-2.5 outline-none font-semibold text-blue-900 focus:ring-2 focus:ring-blue-500"
